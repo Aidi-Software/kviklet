@@ -4,22 +4,23 @@ import org.springframework.boot.gradle.tasks.run.BootRun
 plugins {
     id("org.springframework.boot") version "3.1.2"
     id("io.spring.dependency-management") version "1.0.15.RELEASE"
-    kotlin("jvm") version "1.9.10"
-    kotlin("plugin.spring") version "1.9.10"
-    kotlin("plugin.jpa") version "1.9.10"
-    kotlin("kapt") version "1.9.10" // needed for query-dsl
+    kotlin("jvm") version "1.9.24"
+    kotlin("plugin.spring") version "1.9.24"
+    kotlin("plugin.jpa") version "1.9.24"
+    kotlin("kapt") version "1.9.24" // needed for query-dsl
 }
 
-kapt {
-    javacOptions {
-        option("querydsl.entityAccessors", true)
-    }
-    arguments {
-        arg("plugin", "com.querydsl.apt.jpa.JPAAnnotationProcessor")
-    }
+// kapt {
+//     javacOptions {
+//         option("querydsl.entityAccessors", true)
+//     }
+//     arguments {
+//         arg("plugin", "com.querydsl.apt.jpa.JPAAnnotationProcessor")
+//     }
 
-    correctErrorTypes = true
-}
+//     correctErrorTypes = true
+//     includeCompileClasspath = false
+// }
 
 group = "com.example"
 version = "0.0.1-SNAPSHOT"
