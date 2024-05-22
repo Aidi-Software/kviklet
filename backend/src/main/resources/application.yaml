@@ -2,16 +2,45 @@ spring:
   liquibase:
     change-log: classpath:changelog/000-changelog.yaml
   datasource:
-    url: jdbc:h2:mem:mydb;MODE=LEGACY
-    username: sa
-    password:
-    driverClassName: org.h2.Driver
+    url: jdbc:mysql://127.0.0.1:3306/mysql3
+    username: root
+    password: root
+    driverClassName: com.mysql.cj.jdbc.Driver
   jpa:
     properties:
       hibernate:
         auto_quote_keyword: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        globally_quoted_identifiers: false
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
   h2:
-    console.enabled: true
+    console.enabled: false
 app:
   name: "Execution Gate"
+
+initial:
+  user:
+    email: admin@example.com
+    password: adminpassword
+
+# # With postgresql
+# spring:
+#   liquibase:
+#     change-log: classpath:changelog/000-changelog.yaml
+#   datasource:
+#     url: jdbc:postgresql://172.25.0.3:5433/kviklet
+#     username: postgres
+#     password: postgres
+#     driverClassName: org.postgresql.Driver
+#   jpa:
+#     properties:
+#       hibernate:
+#         auto_quote_keyword: true
+#         dialect: org.hibernate.dialect.PostgreSQLDialect
+#   h2:
+#     console.enabled: false
+# app:
+#   name: "Execution Gate"
