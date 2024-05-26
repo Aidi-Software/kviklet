@@ -6,5 +6,4 @@ databaseChangeLog:
         - renameColumn:
             oldColumnName: google_id
             newColumnName: subject
-            tableName: users
-            columnDataType: VARCHAR(255) # Replace with the actual data type of google_id column
+            tableName: user

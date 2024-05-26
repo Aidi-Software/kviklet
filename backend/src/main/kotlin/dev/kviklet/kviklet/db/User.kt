@@ -28,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.io.Serializable
 
 @Entity
-@Table(name = "users")
+@Table(name = "user")
 class UserEntity(
     @Column(nullable = true)
     var fullName: String? = null,
