@@ -25,22 +25,3 @@ initial:
   user:
     email: admin@example.com
     password: adminpassword
-
-# # With postgresql
-# spring:
-#   liquibase:
-#     change-log: classpath:changelog/000-changelog.yaml
-#   datasource:
-#     url: jdbc:postgresql://172.25.0.3:5433/kviklet
-#     username: postgres
-#     password: postgres
-#     driverClassName: org.postgresql.Driver
-#   jpa:
-#     properties:
-#       hibernate:
-#         auto_quote_keyword: true
-#         dialect: org.hibernate.dialect.PostgreSQLDialect
-#   h2:
-#     console.enabled: false
-# app:
-#   name: "Execution Gate"
