@@ -18,5 +18,5 @@ app:
 
 initial:
   user:
-    email: postgres
+    email: jamie.li@aidi.io
     password: postgres
