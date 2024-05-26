@@ -547,7 +547,18 @@ class ExecutionRequestController(
     @Operation(summary = "List Execution Requests")
     @GetMapping("/")
     fun list(): List<ExecutionRequestResponse> {
-        return executionRequestService.list().map { ExecutionRequestResponse.fromDto(it) }
+        // TODO: Fix access denied errors
+        println("--------List Execution Requests---------")
+        return try {
+            val executionRequests = executionRequestService.list()
+            println("Execution requests retrieved successfully: ${executionRequests.size} requests found.")
+            executionRequests.map { ExecutionRequestResponse.fromDto(it) }
+        } catch (e: Exception) {
+            println("Error occurred while listing execution requests: ${e.message}")
+            e.printStackTrace()
+            emptyList() // Returning an empty list as a default value
+        }
+        // return executionRequestService.list().map { ExecutionRequestResponse.fromDto(it) }
     }
 
     @Operation(summary = "Review Execution Request", description = "Approve or disapprove an execution request.")
