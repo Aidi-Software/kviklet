@@ -248,11 +248,16 @@ class CustomAuthenticationProvider(val userAdapter: UserAdapter, val passwordEnc
     override fun authenticate(authentication: Authentication?): Authentication? {
         val email = authentication?.name!!
         val password = authentication.credentials.toString()
-
+        
+        // Attempting to authenticate the user
         val user = userAdapter.findByEmail(email)
 
-        if (user == null || user.subject != null || !passwordEncoder.matches(password, user.password)) {
-            throw BadCredentialsException("Invalid username or password, or user is an OAuth user.")
+        // Check user's credentials
+        if (user == null || !passwordEncoder.matches(password, user.password)) {
+            throw BadCredentialsException("Invalid username or password.")
+        }
+        if (user.subject != null) {
+            throw CustomAuthException("User is an OAuth user.")
         }
 
         // Create a CustomUserDetails object
