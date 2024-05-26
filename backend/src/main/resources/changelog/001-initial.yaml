@@ -193,7 +193,7 @@ databaseChangeLog:
                   constraints:
                     nullable: false
         - createTable:
-            tableName: users
+            tableName: user
             columns:
               - column:
                   name: id
