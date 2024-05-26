@@ -207,7 +207,7 @@ class CustomAuthenticationProvider(
             throw BadCredentialsException("Invalid username or password.")
         }
         if (user.subject != null) {
-            throw CustomAuthException("User is an OAuth user.")
+            throw BadCredentialsException("User is an OAuth user.")
         }
 
         // Create a CustomUserDetails object
