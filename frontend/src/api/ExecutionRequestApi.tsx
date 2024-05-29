@@ -312,6 +312,20 @@ const addReviewToRequest = async (
   );
 };
 
+const getSQLDumpRequest = async (connectionId: number) => {
+  console.log("-------getSQLDumpRequest---------")
+  const response = await fetch(`${requestUrl}sql-dump/${connectionId}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+  });
+  // TODO: it returns .sql not json
+  await response.json();
+  return;
+};
+
 function withType<T, U extends string>(schema: z.ZodSchema<T>, typeValue: U) {
   return schema.transform((data) => ({
     ...data,
@@ -421,6 +435,7 @@ export {
   getSingleRequest,
   addCommentToRequest,
   addReviewToRequest,
+  getSQLDumpRequest,
   runQuery,
   patchRequest,
   postStartServer,
