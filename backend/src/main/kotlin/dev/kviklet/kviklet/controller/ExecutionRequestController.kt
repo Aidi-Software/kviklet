@@ -540,6 +540,7 @@ class ExecutionRequestController(
     @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
     @GetMapping("/sql-dump/{connectionId}")
     fun getSQLDump(@PathVariable connectionId: String): ResponseEntity<InputStreamResource> {
+        // TODO: move to service layer
 
         return try {
             // Get the db connection information
@@ -573,21 +574,17 @@ class ExecutionRequestController(
                         .contentType(MediaType.parseMediaType("application/octet-stream"))
                         .body(resource)
                 } else {
-                    println("mysqldump command failed with exit code: $exitCode")
-                    ResponseEntity.status(500).build()
+                    throw Exception("mysqldump command failed with exit code: $exitCode")
                 }
             } else {
                 // Return bad request if connection is not of type DatasourceConnection, 
-                println("Invalid connection type for connectionId: $connectionId")
-                ResponseEntity.status(400).build()
+                throw Exception("Invalid connection type for connectionId: $connectionId")
             }
         } catch (e: Exception) {
-            println("Other unexpected error occurred: ${e.message}")
-            ResponseEntity.status(500).build()
+            throw Exception("Other unexpected error occurred: ${e.message}")
+            // TODO: Datasource Connection $connectionId Not Found
         }
     }
-
-
 
     @Operation(summary = "Create Execution Request")
     @PostMapping("/")
