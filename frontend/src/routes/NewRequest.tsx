@@ -717,7 +717,7 @@ const Card = (props: CardProps) => {
                   className="h-5 w-5 text-slate-400 dark:text-slate-500"
                   aria-hidden="true"
                 />
-                SQL Dump
+                DB Dump
               </button>
             </div>
           )}
