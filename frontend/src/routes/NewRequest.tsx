@@ -17,14 +17,12 @@ import Button from "../components/Button";
 import { Disclosure } from "@headlessui/react";
 import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
-import useNotification from "../hooks/useNotification";
-import { isApiErrorResponse } from "../api/Errors";
 
 const DatasourceExecutionRequestSchema = z
   .object({
     connectionType: z.literal("DATASOURCE"),
     title: z.string().min(1, { message: "Title is required" }),
-    type: z.enum(["TemporaryAccess", "SingleExecution"]),
+    type: z.enum(["TemporaryAccess", "SingleExecution", "GetSQLDump"]),
     description: z.string(),
     statement: z.string().optional(),
     connectionId: z.string().min(1),
@@ -32,6 +30,7 @@ const DatasourceExecutionRequestSchema = z
   .refine(
     (data) =>
       data.type === "TemporaryAccess" ||
+      "GetSQLDump" ||
       (!!data.statement && data.type === "SingleExecution"),
     {
       message: "If you create a query request an SQL statement is rquired",
@@ -86,7 +85,7 @@ interface PreConfiguredStateKubernetes {
 
 interface PreConfiguredStateDatasource {
   connectionId: string;
-  mode: "SingleExecution" | "TemporaryAccess";
+  mode: "SingleExecution" | "TemporaryAccess" | "GetSQLDump";
   connectionType: "Datasource";
   title: string;
   description: string;
@@ -103,7 +102,7 @@ export default function ConnectionChooser() {
     ConnectionResponse | undefined
   >(undefined);
   const [chosenMode, setChosenMode] = useState<
-    "SingleExecution" | "TemporaryAccess" | undefined
+    "SingleExecution" | "TemporaryAccess" | "GetSQLDump" | undefined
   >(undefined);
 
   const location = useLocation();
@@ -165,23 +164,30 @@ export default function ConnectionChooser() {
                       className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
                     >
                       {connections.map((connection) => (
-                        <Card
-                          header={connection.displayName}
-                          subheader={connection.description}
-                          label={connection.id}
-                          key={connection.id}
-                          clickQuery={() => {
-                            setChosenConnection(connection);
-                            setChosenMode("SingleExecution");
-                            close();
-                          }}
-                          clickAccess={() => {
-                            setChosenConnection(connection);
-                            setChosenMode("TemporaryAccess");
-                            close();
-                          }}
-                          connectionType={connection._type}
-                        ></Card>
+                        <>
+                          <Card
+                            header={connection.displayName}
+                            subheader={connection.description}
+                            label={connection.id}
+                            key={connection.id}
+                            clickQuery={() => {
+                              setChosenConnection(connection);
+                              setChosenMode("SingleExecution");
+                              close();
+                            }}
+                            clickAccess={() => {
+                              setChosenConnection(connection);
+                              setChosenMode("TemporaryAccess");
+                              close();
+                            }}
+                            clickSQLDump={() => {
+                              setChosenConnection(connection);
+                              setChosenMode("GetSQLDump");
+                              close();
+                            }}
+                            connectionType={connection._type}
+                          ></Card>
+                        </>
                       ))}
                     </ul>
                   </Disclosure.Panel>
@@ -216,13 +222,11 @@ const DatasourceExecutionRequestForm = ({
   mode,
 }: {
   connection: ConnectionResponse;
-  mode: "SingleExecution" | "TemporaryAccess";
+  mode: "SingleExecution" | "TemporaryAccess" | "GetSQLDump";
 }) => {
   const navigate = useNavigate();
 
   const location = useLocation();
-
-  const { addNotification } = useNotification();
 
   const {
     register,
@@ -248,16 +252,8 @@ const DatasourceExecutionRequestForm = ({
   const onSubmit: SubmitHandler<DatasourceExecutionRequest> = async (
     data: DatasourceExecutionRequest,
   ) => {
-    const response = await addRequest(data);
-    if (isApiErrorResponse(response)) {
-      addNotification({
-        title: "Failed to create request",
-        text: response.message,
-        type: "error",
-      });
-    } else {
-      navigate("/requests");
-    }
+    await addRequest(data);
+    navigate("/requests");
   };
 
   return (
@@ -299,7 +295,9 @@ const DatasourceExecutionRequestForm = ({
             className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
             id="title-input"
             type="text"
-            placeholder="My query"
+            placeholder={
+              mode === "GetSQLDump" ? "Give the request a title" : "My query"
+            }
             {...register("title")}
           />
           {errors.title && (
@@ -321,7 +319,9 @@ const DatasourceExecutionRequestForm = ({
             placeholder={
               mode === "TemporaryAccess"
                 ? "Why do you need access to this connection?"
-                : "What are you trying to accomplish with this Query?"
+                : mode === "SingleExecution"
+                ? "What are you trying to accomplish with this Query?"
+                : "Why do you need a SQL dump from this database?"
             }
             {...register("description")}
           ></textarea>
@@ -366,20 +366,10 @@ const usePods = () => {
   const [pods, setPods] = useState<Pod[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const { addNotification } = useNotification();
-
   useEffect(() => {
     const fetchData = async () => {
       const response = await getPods();
-      if (isApiErrorResponse(response)) {
-        addNotification({
-          title: "Failed to load pods",
-          text: response.message,
-          type: "error",
-        });
-      } else {
-        setPods(response.pods);
-      }
+      setPods(response.pods);
       setLoading(false);
     };
     void fetchData();
@@ -398,8 +388,6 @@ const KubernetesExecutionRequestForm = ({
   const navigate = useNavigate();
 
   const location = useLocation();
-
-  const { addNotification } = useNotification();
 
   const {
     register,
@@ -441,16 +429,8 @@ const KubernetesExecutionRequestForm = ({
   const onSubmit: SubmitHandler<KubernetesExecutionRequest> = async (
     data: KubernetesExecutionRequest,
   ) => {
-    const response = await addRequest(data);
-    if (isApiErrorResponse(response)) {
-      addNotification({
-        title: "Failed to create request",
-        text: response.message,
-        type: "error",
-      });
-    } else {
-      navigate("/requests");
-    }
+    await addRequest(data);
+    navigate("/requests");
   };
 
   return (
@@ -650,6 +630,7 @@ interface CardProps {
   subheader: string;
   clickQuery: () => void;
   clickAccess: () => void;
+  clickSQLDump: () => void;
   connectionType: "DATASOURCE" | "KUBERNETES";
 }
 
@@ -703,6 +684,20 @@ const Card = (props: CardProps) => {
                   aria-hidden="true"
                 />
                 Access
+              </button>
+            </div>
+          )}
+          {props.connectionType === "DATASOURCE" && (
+            <div className="-ml-px flex w-0 flex-1">
+              <button
+                onClick={props.clickSQLDump}
+                className="relative inline-flex w-0 flex-1 items-center justify-center gap-x-3 rounded-br-lg border border-transparent py-4 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:text-slate-50 dark:hover:bg-slate-800"
+              >
+                <CircleStackIcon
+                  className="h-5 w-5 text-slate-400 dark:text-slate-500"
+                  aria-hidden="true"
+                />
+                DB Dump
               </button>
             </div>
           )}
