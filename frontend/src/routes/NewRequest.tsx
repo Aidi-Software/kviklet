@@ -17,6 +17,9 @@ import Button from "../components/Button";
 import { Disclosure } from "@headlessui/react";
 import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
+import Modal from "../components/Modal";
+import SQLDumpConfirm from "../components/SQLDumpConfirm";
+import { getSQLDumpRequest } from "../api/ExecutionRequestApi"
 
 const DatasourceExecutionRequestSchema = z
   .object({
@@ -103,8 +106,30 @@ export default function ConnectionChooser() {
   const [chosenMode, setChosenMode] = useState<
     "SingleExecution" | "TemporaryAccess" | undefined
   >(undefined);
+  const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
 
   const location = useLocation();
+  
+  const getSQLDump = async (connectionId: string) => {
+    // TODO: add a SaveFilePicker before calling the API
+    await getSQLDumpRequest(connectionId);
+    setShowSQLDumpModal(false); // Close the modal after confirming
+  };
+
+  const SQLDumpModal = () => {
+    if (!showSQLDumpModal) return null;
+    return (
+      <Modal setVisible={setShowSQLDumpModal}>
+        <SQLDumpConfirm
+          title="Get SQL Dump"
+          message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
+          // onConfirm={getSQLDump(chosenConnection.id)}
+          onConfirm={() => getSQLDump(chosenConnection.id)}
+          onCancel={() => setShowSQLDumpModal(false)}
+        />
+      </Modal>
+    );
+  };
 
   useEffect(() => {
     const state = location.state as PreConfiguredState;
@@ -163,23 +188,30 @@ export default function ConnectionChooser() {
                       className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
                     >
                       {connections.map((connection) => (
-                        <Card
-                          header={connection.displayName}
-                          subheader={connection.description}
-                          label={connection.id}
-                          key={connection.id}
-                          clickQuery={() => {
-                            setChosenConnection(connection);
-                            setChosenMode("SingleExecution");
-                            close();
-                          }}
-                          clickAccess={() => {
-                            setChosenConnection(connection);
-                            setChosenMode("TemporaryAccess");
-                            close();
-                          }}
-                          connectionType={connection._type}
-                        ></Card>
+                        <>  
+                          <Card
+                            header={connection.displayName}
+                            subheader={connection.description}
+                            label={connection.id}
+                            key={connection.id}
+                            clickQuery={() => {
+                              setChosenConnection(connection);
+                              setChosenMode("SingleExecution");
+                              close();
+                            }}
+                            clickAccess={() => {
+                              setChosenConnection(connection);
+                              setChosenMode("TemporaryAccess");
+                              close();
+                            }}
+                            clickSQLDump={() => {
+                              setChosenConnection(connection);
+                              setShowSQLDumpModal(true);
+                            }}
+                            connectionType={connection._type}
+                          ></Card>
+                          {SQLDumpModal()}
+                        </>
                       ))}
                     </ul>
                   </Disclosure.Panel>
@@ -618,6 +650,7 @@ interface CardProps {
   subheader: string;
   clickQuery: () => void;
   clickAccess: () => void;
+  clickSQLDump: () => void;
   connectionType: "DATASOURCE" | "KUBERNETES";
 }
 
@@ -671,6 +704,20 @@ const Card = (props: CardProps) => {
                   aria-hidden="true"
                 />
                 Access
+              </button>
+            </div>
+          )}
+          {props.connectionType === "DATASOURCE" && (
+            <div className="-ml-px flex w-0 flex-1">
+              <button
+                onClick={props.clickSQLDump}
+                className="relative inline-flex w-0 flex-1 items-center justify-center gap-x-3 rounded-br-lg border border-transparent py-4 text-sm font-semibold text-slate-900 hover:bg-slate-100 dark:text-slate-50 dark:hover:bg-slate-800"
+              >
+                <CircleStackIcon
+                  className="h-5 w-5 text-slate-400 dark:text-slate-500"
+                  aria-hidden="true"
+                />
+                SQL Dump
               </button>
             </div>
           )}
