@@ -19,7 +19,6 @@ import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
 import Modal from "../components/Modal";
 import SQLDumpConfirm from "../components/SQLDumpConfirm";
-import FilePicker from "../components/FilePicker"
 import { getSQLDumpRequest } from "../api/ExecutionRequestApi"
 
 const DatasourceExecutionRequestSchema = z
@@ -112,6 +111,7 @@ export default function ConnectionChooser() {
   const location = useLocation();
   
   const handleSQLDump = async (connectionId: string) => {
+    // TODO: Add loading effect and toastify
     try {
       // Show save file picker with default file name
       const fileHandle = await (window as any).showSaveFilePicker({
