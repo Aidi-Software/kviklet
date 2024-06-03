@@ -19,6 +19,7 @@ import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
 import Modal from "../components/Modal";
 import SQLDumpConfirm from "../components/SQLDumpConfirm";
+import FilePicker from "../components/FilePicker"
 import { getSQLDumpRequest } from "../api/ExecutionRequestApi"
 
 const DatasourceExecutionRequestSchema = z
@@ -110,21 +111,48 @@ export default function ConnectionChooser() {
 
   const location = useLocation();
   
-  const getSQLDump = async (connectionId: string) => {
-    // TODO: add a SaveFilePicker before calling the API
-    await getSQLDumpRequest(connectionId);
-    setShowSQLDumpModal(false); // Close the modal after confirming
+  const handleSQLDump = async (connectionId: string) => {
+    try {
+      // Show save file picker with default file name
+      const fileHandle = await (window as any).showSaveFilePicker({
+        suggestedName: `${connectionId}.sql`,
+        types: [{
+          description: 'SQL Files',
+          accept: {
+            'text/sql': ['.sql'],
+          },
+        }],
+      });
+  
+      // Get the writable stream to write the SQL dump
+      const writableStream = await fileHandle.createWritable();
+  
+      // Fetch SQL dump data
+      const sqlBlob = await getSQLDumpRequest(connectionId);
+  
+      // Convert Blob to ArrayBuffer
+      const arrayBuffer = await sqlBlob.arrayBuffer();
+  
+      // Write ArrayBuffer to the writable stream
+      await writableStream.write(arrayBuffer);
+  
+      // Close the writable stream
+      await writableStream.close();
+    } catch (error) {
+      console.error('Error fetching or saving SQL dump:', error);
+    } finally {
+      setShowSQLDumpModal(false);
+    }
   };
-
+  
   const SQLDumpModal = () => {
-    if (!showSQLDumpModal) return null;
+    if (!showSQLDumpModal || !chosenConnection) return null;
     return (
       <Modal setVisible={setShowSQLDumpModal}>
         <SQLDumpConfirm
           title="Get SQL Dump"
           message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
-          // onConfirm={getSQLDump(chosenConnection.id)}
-          onConfirm={() => getSQLDump(chosenConnection.id)}
+          onConfirm={() => handleSQLDump(chosenConnection.id)}
           onCancel={() => setShowSQLDumpModal(false)}
         />
       </Modal>
