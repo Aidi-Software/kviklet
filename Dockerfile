@@ -15,7 +15,7 @@ WORKDIR /app
 COPY ./frontend/package-lock.json ./frontend/package.json ./
 RUN npm ci --production
 COPY ./frontend .
-RUN npm run build
+# RUN npm run build
 
 # Stage 2: Run the application
 FROM amazoncorretto:21

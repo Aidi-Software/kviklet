@@ -48,6 +48,16 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
+import org.springframework.http.ResponseEntity
+import org.springframework.http.MediaType
+import org.springframework.http.HttpHeaders
+import java.io.FileInputStream
+import org.springframework.core.io.InputStreamResource
+import java.io.File
+import java.io.InputStream
+import java.io.IOException
+import dev.kviklet.kviklet.service.ConnectionService
+import dev.kviklet.kviklet.service.dto.DatasourceConnection
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "connectionType")
 @JsonSubTypes(
@@ -525,7 +535,56 @@ data class ProxyResponse(
 )
 class ExecutionRequestController(
     val executionRequestService: ExecutionRequestService,
+    val connectionService: ConnectionService,
 ) {
+    @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
+    @GetMapping("/sql-dump/{connectionId}")
+    fun getSQLDump(@PathVariable connectionId: String): ResponseEntity<InputStreamResource> {
+        // TODO: move to service layer
+
+        return try {
+            // Get the db connection information
+            val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
+
+            if (connection is DatasourceConnection) {
+                // Create a temporary file for SQL dump output
+                val tempFile = File.createTempFile(connectionId, ".sql")
+                // Construct mysqldump command
+                val command = arrayOf(
+                    "mysqldump",
+                    "-u${connection.username}",
+                    "-p${connection.password}",
+                    "-h${connection.hostname}",
+                    "-P${connection.port}",
+                    "--databases",
+                    connection.databaseName,
+                    "--result-file=${tempFile.absolutePath}"
+                )
+                
+                // Execute mysqldump command
+                val process = Runtime.getRuntime().exec(command)
+                val exitCode = process.waitFor()
+                // Check if mysqldump executed successfully
+                if (exitCode == 0) {
+                    // If successful, prepare response entity with the SQL dump as input stream
+                    val resource = InputStreamResource(tempFile.inputStream())
+                    val fileName = "$connectionId.sql"
+                    return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
+                        .contentType(MediaType.parseMediaType("application/octet-stream"))
+                        .body(resource)
+                } else {
+                    throw Exception("mysqldump command failed with exit code: $exitCode")
+                }
+            } else {
+                // Return bad request if connection is not of type DatasourceConnection, 
+                throw Exception("Invalid connection type for connectionId: $connectionId")
+            }
+        } catch (e: Exception) {
+            throw Exception("Other unexpected error occurred: ${e.message}")
+            // TODO: Datasource Connection $connectionId Not Found
+        }
+    }
 
     @Operation(summary = "Create Execution Request")
     @PostMapping("/")

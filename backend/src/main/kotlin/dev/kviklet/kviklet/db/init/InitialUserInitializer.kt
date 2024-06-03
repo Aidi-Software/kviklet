@@ -77,10 +77,12 @@ class InitialUserInitializer(
         @Value("\${initial.user.password}") password: String,
     ): ApplicationRunner {
         return ApplicationRunner { _ ->
-            if (userRepository.findAll().isNotEmpty()) {
+            // Find the user by email 
+            if (userRepository.findByEmail(email) != null) {
                 return@ApplicationRunner
             }
-
+            
+            // Create new user if not exist 
             val user = UserEntity(
                 email = email,
                 fullName = "Admin User",
