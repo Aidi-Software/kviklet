@@ -286,10 +286,7 @@ const addReviewToRequest = async (
   return;
 };
 
-const getSQLDumpRequest = async (connectionId: string) => {
-  console.log("-------getting SQL Dump---------")
-  console.log("connectionId: ", connectionId)
-  
+const getSQLDumpRequest = async (connectionId: string): Promise<Blob> => {
   const response = await fetch(`${requestUrl}sql-dump/${connectionId}`, {
     method: "GET",
     headers: {
@@ -298,23 +295,10 @@ const getSQLDumpRequest = async (connectionId: string) => {
     credentials: "include",
   });
 
-  if (response.ok) {
-    // Create a Blob from the response
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dump-${connectionId}.sql`; // Set the filename
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    window.URL.revokeObjectURL(url);
-
-  } else {
-    console.error('Failed to download SQL dump');
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
   }
+  return await response.blob();
 };
 
 function withType<T, U extends string>(schema: z.ZodSchema<T>, typeValue: U) {
