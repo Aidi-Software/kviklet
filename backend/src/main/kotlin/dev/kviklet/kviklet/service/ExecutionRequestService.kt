@@ -47,6 +47,18 @@ import org.springframework.stereotype.Service
 import java.security.SecureRandom
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
+import org.springframework.core.io.InputStreamResource
+import java.io.File
+import java.io.FileInputStream
+import dev.kviklet.kviklet.service.ConnectionService
+
+// TODO: Move to service.dto
+interface SecuredDomainObject 
+data class SQLDumpResponse(
+    val resource: InputStreamResource,
+    val fileName: String
+) : SecuredDomainObject
+
 
 @Service
 class ExecutionRequestService(
@@ -54,6 +66,7 @@ class ExecutionRequestService(
     val executorService: ExecutorService,
     val eventService: EventService,
     val kubernetesApi: KubernetesApi,
+    val connectionService: ConnectionService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val proxies = mutableListOf<ExecutionProxy>()
@@ -159,6 +172,49 @@ class ExecutionRequestService(
             containerName = request.containerName,
             command = request.command,
         )
+    }
+    
+    @Transactional
+    // TODO: Add the permission back
+    // @Policy(Permission.EXECUTION_REQUEST_GET)
+    fun generateSQLDump(connectionId: String): SQLDumpResponse {
+        try {
+            // Get the db connection information
+            val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
+
+            if (connection is DatasourceConnection) {
+                // Create a temporary file for SQL dump output
+                val tempFile = File.createTempFile(connectionId, ".sql")
+                // Construct mysqldump command
+                val command = arrayOf(
+                    "mysqldump",
+                    "-u${connection.username}",
+                    "-p${connection.password}",
+                    "-h${connection.hostname}",
+                    "-P${connection.port}",
+                    "--databases",
+                    connection.databaseName,
+                    "--result-file=${tempFile.absolutePath}"
+                )
+                
+                // Execute mysqldump command
+                val process = Runtime.getRuntime().exec(command)
+                val exitCode = process.waitFor()
+                // Check if mysqldump executed successfully
+                if (exitCode == 0) {
+                    // If successful, prepare response entity with the SQL dump as input stream
+                    val resource = InputStreamResource(tempFile.inputStream())
+                    val fileName = "${connectionId}.sql"
+                    return SQLDumpResponse(resource, fileName)
+                } else {
+                    throw Exception("mysqldump command failed with exit code: $exitCode")
+                }
+            } else {
+                throw Exception("Invalid connection type for connectionId: $connectionId")
+            }
+        } catch (e: Exception) {
+            throw Exception("Other unexpected error occurred: ${e.message}")
+        }
     }
 
     @Transactional
