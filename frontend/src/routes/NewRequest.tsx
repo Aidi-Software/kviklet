@@ -32,7 +32,7 @@ const DatasourceExecutionRequestSchema = z
   })
   .refine(
     (data) =>
-      data.type === "TemporaryAccess" ||
+      data.type === "TemporaryAccess" || "GetSQLDump" ||
       (!!data.statement && data.type === "SingleExecution"),
     {
       message: "If you create a query request an SQL statement is rquired",
@@ -338,28 +338,26 @@ const DatasourceExecutionRequestForm = ({
           />
         </div>
         <input type="hidden" id="type" {...register("type")}></input>
-        {mode !== "GetSQLDump" && (
-          <div className="my-3 rounded-md  px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
-            <label
-              htmlFor="title-input"
-              className="block text-xs font-medium text-slate-900 dark:text-slate-50"
-            >
-              Title
-            </label>
-            <input
-              className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
-              id="title-input"
-              type="text"
-              placeholder="My query"
-              {...register("title")}
-            />
-            {errors.title && (
-              <p className="mt-2 text-xs italic text-red-500">
-                {errors.title?.message}
-              </p>
-            )}
-          </div>
-        )}
+        <div className="my-3 rounded-md  px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
+          <label
+            htmlFor="title-input"
+            className="block text-xs font-medium text-slate-900 dark:text-slate-50"
+          >
+            Title
+          </label>
+          <input
+            className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
+            id="title-input"
+            type="text"
+            placeholder={mode === "GetSQLDump" ? "Give the request a title" : "My query"}
+            {...register("title")}
+          />
+          {errors.title && (
+            <p className="mt-2 text-xs italic text-red-500">
+              {errors.title?.message}
+            </p>
+          )}
+        </div>
         <div className="my-3 rounded-md px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
           <label
             htmlFor="description-input"
