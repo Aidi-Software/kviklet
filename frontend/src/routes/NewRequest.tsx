@@ -25,7 +25,7 @@ const DatasourceExecutionRequestSchema = z
   .object({
     connectionType: z.literal("DATASOURCE"),
     title: z.string().min(1, { message: "Title is required" }),
-    type: z.enum(["TemporaryAccess", "SingleExecution"]),
+    type: z.enum(["TemporaryAccess", "SingleExecution", "GetSQLDump"]),
     description: z.string(),
     statement: z.string().optional(),
     connectionId: z.string().min(1),
@@ -87,7 +87,7 @@ interface PreConfiguredStateKubernetes {
 
 interface PreConfiguredStateDatasource {
   connectionId: string;
-  mode: "SingleExecution" | "TemporaryAccess";
+  mode: "SingleExecution" | "TemporaryAccess" | "GetSQLDump";
   connectionType: "Datasource";
   title: string;
   description: string;
@@ -104,7 +104,7 @@ export default function ConnectionChooser() {
     ConnectionResponse | undefined
   >(undefined);
   const [chosenMode, setChosenMode] = useState<
-    "SingleExecution" | "TemporaryAccess" | undefined
+    "SingleExecution" | "TemporaryAccess" | "GetSQLDump" | undefined
   >(undefined);
   const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
 
@@ -234,7 +234,9 @@ export default function ConnectionChooser() {
                             }}
                             clickSQLDump={() => {
                               setChosenConnection(connection);
-                              setShowSQLDumpModal(true);
+                              setChosenMode("GetSQLDump");
+                              close();
+                              // setShowSQLDumpModal(true);
                             }}
                             connectionType={connection._type}
                           ></Card>
@@ -274,7 +276,7 @@ const DatasourceExecutionRequestForm = ({
   mode,
 }: {
   connection: ConnectionResponse;
-  mode: "SingleExecution" | "TemporaryAccess";
+  mode: "SingleExecution" | "TemporaryAccess" | "GetSQLDump";
 }) => {
   const navigate = useNavigate();
 
@@ -336,26 +338,28 @@ const DatasourceExecutionRequestForm = ({
           />
         </div>
         <input type="hidden" id="type" {...register("type")}></input>
-        <div className="my-3 rounded-md  px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
-          <label
-            htmlFor="title-input"
-            className="block text-xs font-medium text-slate-900 dark:text-slate-50"
-          >
-            Title
-          </label>
-          <input
-            className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
-            id="title-input"
-            type="text"
-            placeholder="My query"
-            {...register("title")}
-          />
-          {errors.title && (
-            <p className="mt-2 text-xs italic text-red-500">
-              {errors.title?.message}
-            </p>
-          )}
-        </div>
+        {mode !== "GetSQLDump" && (
+          <div className="my-3 rounded-md  px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
+            <label
+              htmlFor="title-input"
+              className="block text-xs font-medium text-slate-900 dark:text-slate-50"
+            >
+              Title
+            </label>
+            <input
+              className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
+              id="title-input"
+              type="text"
+              placeholder="My query"
+              {...register("title")}
+            />
+            {errors.title && (
+              <p className="mt-2 text-xs italic text-red-500">
+                {errors.title?.message}
+              </p>
+            )}
+          </div>
+        )}
         <div className="my-3 rounded-md px-3 pb-1.5 pt-2.5 shadow-sm ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-600 dark:ring-slate-700">
           <label
             htmlFor="description-input"
@@ -369,7 +373,9 @@ const DatasourceExecutionRequestForm = ({
             placeholder={
               mode === "TemporaryAccess"
                 ? "Why do you need access to this connection?"
-                : "What are you trying to accomplish with this Query?"
+                : mode === "SingleExecution"
+                ? "What are you trying to accomplish with this Query?"
+                : "Why do you need a SQL dump from this database?"
             }
             {...register("description")}
           ></textarea>
