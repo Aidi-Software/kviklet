@@ -36,6 +36,7 @@ enum class ExecutionStatus {
 enum class RequestType {
     SingleExecution,
     TemporaryAccess,
+    GetSQLDump
 }
 
 /**
@@ -193,6 +194,19 @@ data class ExecutionRequestDetails(val request: ExecutionRequest, val events: Mu
                 return ExecutionStatus.EXECUTABLE
             }
             RequestType.TemporaryAccess -> {
+                val executions = events.filter { it.type == EventType.EXECUTE }
+                if (executions.isEmpty()) {
+                    return ExecutionStatus.EXECUTABLE
+                }
+                val firstExecution = executions.minBy { it.createdAt }
+                return if (firstExecution.createdAt < utcTimeNow().minusMinutes(60)) {
+                    ExecutionStatus.EXECUTED
+                } else {
+                    ExecutionStatus.ACTIVE
+                }
+            }
+            // TODO: Modify the following for the SQL dump action
+            RequestType.GetSQLDump -> {
                 val executions = events.filter { it.type == EventType.EXECUTE }
                 if (executions.isEmpty()) {
                     return ExecutionStatus.EXECUTABLE

@@ -21,6 +21,8 @@ import {
   DatasourceExecutionRequestResponseWithComments,
   executeCommand,
   KubernetesExecuteResponse,
+  getSQLDumpRequest,
+  getSQLDumpStreamedRequest,
 } from "../api/ExecutionRequestApi";
 import Button from "../components/Button";
 import { mapStatus, mapStatusToLabelColor, timeSince } from "./Requests";
@@ -43,9 +45,9 @@ import ShellResult from "../components/ShellResult";
 import { Disclosure } from "@headlessui/react";
 import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import MenuDropDown from "../components/MenuDropdown";
-import { isApiErrorResponse } from "../api/Errors";
-import useNotification from "../hooks/useNotification";
-import baseUrl from "../api/base";
+import Modal from "../components/Modal";
+import SQLDumpConfirm from "../components/SQLDumpConfirm";
+import { ConnectionResponse } from "../api/DatasourceApi";
 
 interface RequestReviewParams {
   requestId: string;
@@ -78,13 +80,6 @@ const componentMap = {
   ),
 };
 
-enum ReviewTypes {
-  Comment = "comment",
-  Approve = "approve",
-  RequestChange = "request_change",
-  Reject = "reject",
-}
-
 const useRequest = (id: string) => {
   const [request, setRequest] = useState<
     ExecutionRequestResponseWithComments | undefined
@@ -94,26 +89,14 @@ const useRequest = (id: string) => {
     undefined,
   );
 
-  const { addNotification } = useNotification();
-
-  async function loadRequest() {
-    setLoading(true);
-    const request = await getSingleRequest(id);
-    if (isApiErrorResponse(request)) {
-      addNotification({
-        title: "Failed to fetch request",
-        text: request.message,
-        type: "error",
-      });
-      setLoading(false);
-      return;
-    }
-    setRequest(request);
-    setLoading(false);
-  }
-
   useEffect(() => {
-    void loadRequest();
+    async function request() {
+      setLoading(true);
+      const request = await getSingleRequest(id);
+      setRequest(request);
+      setLoading(false);
+    }
+    void request();
   }, []);
 
   const [results, setResults] = useState<ExecuteResponseResult[] | undefined>();
@@ -126,16 +109,7 @@ const useRequest = (id: string) => {
   );
 
   const addComment = async (comment: string) => {
-    const response = await addCommentToRequest(id, comment);
-
-    if (isApiErrorResponse(response)) {
-      addNotification({
-        title: "Failed to add comment",
-        text: response.message,
-        type: "error",
-      });
-      return;
-    }
+    const event = await addCommentToRequest(id, comment);
 
     // update the request with the new comment by updating the events propertiy with a new Comment
     setRequest((request) => {
@@ -144,71 +118,43 @@ const useRequest = (id: string) => {
       }
       return {
         ...request,
-        events: [...request.events, response],
+        events: [...request.events, event],
       };
     });
   };
 
-  const start = async (): Promise<void> => {
+  const start = async (): Promise<ProxyResponse> => {
     const response = await postStartServer(id);
-    if (isApiErrorResponse(response)) {
-      addNotification({
-        title: "Failed to start proxy",
-        text: response.message,
-        type: "error",
-      });
-    } else {
-      setProxyResponse(response);
-    }
+    setProxyResponse(response);
+    return response;
   };
 
   const updateRequest = async (request: ChangeExecutionRequestPayload) => {
-    const response = await patchRequest(id, request);
-    if (isApiErrorResponse(response)) {
-      addNotification({
-        title: "Failed to update request",
-        text: response.message,
-        type: "error",
-      });
-      return;
-    } else {
-      setRequest(response);
-    }
+    const newRequest = await patchRequest(id, request);
+    setRequest(newRequest);
   };
 
-  const sendReview = async (comment: string, type: ReviewTypes) => {
-    switch (type) {
-      case ReviewTypes.Approve:
-        await addReviewToRequest(id, comment, "APPROVE");
-        break;
-      case ReviewTypes.Comment:
-        await addComment(comment);
-        break;
-      case ReviewTypes.RequestChange:
-        await addReviewToRequest(id, comment, "REQUEST_CHANGE");
-        break;
-      case ReviewTypes.Reject:
-        await addReviewToRequest(id, comment, "REJECT");
-        break;
-    }
-    await loadRequest();
+  const approve = async (comment: string) => {
+    await addReviewToRequest(id, comment, "APPROVE");
+    const newRequest = await getSingleRequest(id);
+    setRequest(newRequest);
   };
 
   const execute = async (explain: boolean) => {
     setDataLoading(true);
     if (request?._type === "DATASOURCE") {
       const response = await runQuery(id, undefined, explain);
-      if (isApiErrorResponse(response)) {
-        setExecutionError(response.message);
-      } else {
+      if (response.results) {
         setResults(response.results);
+      } else {
+        setExecutionError(response.error?.message);
       }
     } else if (request?._type === "KUBERNETES") {
       const response = await executeCommand(id);
-      if (isApiErrorResponse(response)) {
-        setExecutionError(response.message);
+      if (response.results) {
+        setKubernetesResults(response.results);
       } else {
-        setKubernetesResults(response);
+        setExecutionError(response.error?.message);
       }
     }
 
@@ -217,7 +163,8 @@ const useRequest = (id: string) => {
 
   return {
     request,
-    sendReview,
+    addComment,
+    approve,
     execute,
     start,
     updateRequest,
@@ -234,7 +181,8 @@ function RequestReview() {
   const params = useParams() as unknown as RequestReviewParams;
   const {
     request,
-    sendReview,
+    addComment,
+    approve,
     execute,
     start,
     updateRequest,
@@ -266,7 +214,7 @@ function RequestReview() {
               <div
                 className={` ${mapStatusToLabelColor(
                   mapStatus(request.reviewStatus, request.executionStatus),
-                )} mt-2 rounded-md px-2 py-1 text-base font-medium ring-1 ring-inset `}
+                )} mt-2 w-min rounded-md px-2 py-1 text-base font-medium ring-1 ring-inset `}
               >
                 {mapStatus(request.reviewStatus, request.executionStatus)}
               </div>
@@ -318,20 +266,12 @@ function RequestReview() {
                               index={index}
                             ></ExecuteEvent>
                           );
-                        if (event?._type === "COMMENT")
-                          return (
-                            <Comment event={event} index={index}></Comment>
-                          );
-                        if (event?._type === "REVIEW")
-                          return (
-                            <ReviewEvent
-                              event={event}
-                              index={index}
-                            ></ReviewEvent>
-                          );
+
+                        return <Comment event={event} index={index}></Comment>;
                       })}
                   <CommentBox
-                    sendReview={sendReview}
+                    addComment={addComment}
+                    approve={approve}
                     userId={request?.author?.id}
                   ></CommentBox>
                 </div>
@@ -355,7 +295,7 @@ function DatasourceRequestDisplay({
 }: {
   request: DatasourceExecutionRequestResponseWithComments | undefined;
   run: (explain?: boolean) => Promise<void>;
-  start: () => Promise<void>;
+  start: () => Promise<ProxyResponse>;
   updateRequest: (request: { statement?: string }) => Promise<void>;
   results: ExecuteResponseResult[] | undefined;
   dataLoading: boolean;
@@ -400,7 +340,7 @@ function KubernetesRequestDisplay({
 }: {
   request: KubernetesExecutionRequestResponseWithComments;
   run: (explain?: boolean) => Promise<void>;
-  start: () => Promise<void>;
+  start: () => Promise<ProxyResponse>;
   updateRequest: (request: { command?: string }) => Promise<void>;
   results: KubernetesExecuteResponse | undefined;
   dataLoading: boolean;
@@ -436,7 +376,7 @@ function KubernetesRequestDisplay({
 interface KubernetesRequestBoxProps {
   request: KubernetesExecutionRequestResponseWithComments;
   runQuery: (explain?: boolean) => Promise<void>;
-  startServer: () => Promise<void>;
+  startServer: () => Promise<ProxyResponse>;
   updateRequest: (request: { command?: string }) => Promise<void>;
 }
 
@@ -484,7 +424,7 @@ const KubernetesRequestBox: React.FC<KubernetesRequestBoxProps> = ({
         void navigateCopy();
       },
       enabled: true,
-      content: "Copy Request",
+      text: "Copy Request",
     },
   ];
 
@@ -563,10 +503,15 @@ function DatasourceRequestBox({
 }: {
   request: DatasourceExecutionRequestResponseWithComments | undefined;
   runQuery: (explain?: boolean) => Promise<void>;
-  startServer: () => Promise<void>;
+  startServer: () => Promise<ProxyResponse>;
   updateRequest: (request: { statement?: string }) => Promise<void>;
 }) {
   const [editMode, setEditMode] = useState(false);
+  const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
+  const [chosenConnection, setChosenConnection] = useState<
+    ConnectionResponse | undefined
+  >(undefined);
+
   const navigate = useNavigate();
   const [statement, setStatement] = useState(request?.statement || "");
   const changeStatement = async (
@@ -602,23 +547,11 @@ function DatasourceRequestBox({
 
   const menuDropDownItems = [
     {
-      onClick: () => {},
-      enabled: request?.csvDownload?.allowed || false,
-      tooltip:
-        (!request?.csvDownload?.allowed && request?.csvDownload?.reason) ||
-        undefined,
-      content: (
-        <a href={`${baseUrl}/execution-requests/${request?.id}/download`}>
-          Download as CSV
-        </a>
-      ),
-    },
-    {
       onClick: () => {
         void navigateCopy();
       },
       enabled: true,
-      content: "Copy Request",
+      text: "Copy Request",
     },
     ...(request?.type == "SingleExecution"
       ? [
@@ -629,7 +562,7 @@ function DatasourceRequestBox({
             enabled:
               request?.reviewStatus === "APPROVED" ||
               request?.reviewStatus === "AWAITING_APPROVAL",
-            content: "Explain",
+            text: "Explain",
           },
         ]
       : []),
@@ -640,11 +573,121 @@ function DatasourceRequestBox({
               void startServer();
             },
             enabled: request?.reviewStatus === "APPROVED",
-            content: "Start Proxy",
+            text: "Start Proxy",
+          },
+        ]
+      : []),
+    ...(request?.type == "GetSQLDump"
+      ? [
+          {
+            onClick: () => {
+              setChosenConnection(request.connection);
+              setShowSQLDumpModal(true);
+            },
+            enabled: request?.reviewStatus === "APPROVED",
+            text: "Get SQL Dump",
           },
         ]
       : []),
   ];
+
+  const getFileHandle = async (connectionId: string) => {
+    try {
+      // Use the Save File Picker to get a file handle
+      const fileHandle = await (window as any).showSaveFilePicker({
+        suggestedName: `${connectionId}.sql`,
+        types: [
+          {
+            description: "SQL Files",
+            accept: {
+              "text/sql": [".sql"],
+            },
+          },
+        ],
+      });
+      return fileHandle;
+    } catch (error) {
+      console.error("Error getting file handle:", error);
+      throw error;
+    }
+  };
+
+  const handleStreamSQLDump = async (connectionId: string) => {
+    try {
+      // Get file handle using the utility function
+      const fileHandle = await getFileHandle(connectionId);
+
+      // Fetch and handle SQL dump data
+      const combinedSQL = await getSQLDumpStreamedRequest(connectionId);
+
+      // Create a writable stream for the file
+      const writableStream = await fileHandle.createWritable();
+
+      // Write the combined SQL content to the file
+      await writableStream.write(
+        new Blob([combinedSQL], { type: "text/plain" }),
+      );
+
+      // Close the file and release the stream
+      await writableStream.close();
+
+      console.log("File saved successfully.");
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setShowSQLDumpModal(false);
+    }
+  };
+
+  const handleSQLDump = async (connectionId: string) => {
+    try {
+      // Get file handle using the utility function
+      const fileHandle = await getFileHandle(connectionId);
+
+      // Get the writable stream to write the SQL dump
+      const writableStream = await fileHandle.createWritable();
+
+      // Fetch SQL dump data
+      const sqlBlob = await getSQLDumpRequest(connectionId);
+
+      // Convert Blob to ArrayBuffer
+      const arrayBuffer = await sqlBlob.arrayBuffer();
+
+      // Write ArrayBuffer to the writable stream
+      await writableStream.write(arrayBuffer);
+
+      // Close the writable stream
+      await writableStream.close();
+    } catch (error) {
+      console.error("Error fetching or saving SQL dump:", error);
+    } finally {
+      setShowSQLDumpModal(false);
+    }
+  };
+
+  const SQLDumpModal = () => {
+    if (!showSQLDumpModal || !chosenConnection) return null;
+    return (
+      <Modal setVisible={setShowSQLDumpModal}>
+        <SQLDumpConfirm
+          title="Get SQL Dump"
+          message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
+          onConfirm={() => handleStreamSQLDump(chosenConnection.id)} //Export Databse Request Streamed
+          // onConfirm={() => handleSQLDump(chosenConnection.id)} //Export Databse Request At Once
+          onCancel={() => setShowSQLDumpModal(false)}
+        />
+      </Modal>
+    );
+  };
+
+  const handleButtonClick = () => {
+    if (request?.type === "GetSQLDump") {
+      setChosenConnection(request.connection);
+      setShowSQLDumpModal(true);
+    } else {
+      void runQuery();
+    }
+  };
 
   return (
     <div>
@@ -706,21 +749,27 @@ function DatasourceRequestBox({
         </div>
       </div>
       <div className="relative mt-3 flex justify-end">
-        <MenuDropDown items={menuDropDownItems}></MenuDropDown>
+        <MenuDropDown items={menuDropDownItems} />
         <Button
           className=""
           id="runQuery"
-          type={(request?.reviewStatus == "APPROVED" && "submit") || "disabled"}
-          onClick={() => void runQuery()}
+          type={request?.reviewStatus === "APPROVED" ? "submit" : "disabled"}
+          onClick={handleButtonClick}
         >
           <div
             className={`play-triangle mr-2 inline-block h-3 w-2 ${
-              (request?.reviewStatus == "APPROVED" && "bg-slate-50") ||
-              "bg-slate-500"
+              request?.reviewStatus === "APPROVED"
+                ? "bg-slate-50"
+                : "bg-slate-500"
             }`}
           ></div>
-          {request?.type == "SingleExecution" ? "Run Query" : "Start Session"}
+          {request?.type === "SingleExecution"
+            ? "Run Query"
+            : request?.type === "TemporaryAccess"
+            ? "Start Session"
+            : "Get SQL Dump"}
         </Button>
+        {SQLDumpModal()}
       </div>
     </div>
   );
@@ -783,10 +832,6 @@ function EditEvent({ event, index }: { event: Edit; index: number }) {
 }
 
 function ExecuteEvent({ event, index }: { event: Execute; index: number }) {
-  const isDownload = event.isDownload || false;
-  const sqlStatementText = isDownload
-    ? "downloaded the results for the following statement:"
-    : "executed the following statement:";
   return (
     <div className="">
       <div className="relative ml-4 flex py-4">
@@ -806,7 +851,7 @@ function ExecuteEvent({ event, index }: { event: Execute; index: number }) {
         </div>
         {event?.query && (
           <div className="text-sm text-slate-500">
-            {event?.author?.fullName} {sqlStatementText}
+            {event?.author?.fullName} ran the following statement:
           </div>
         )}
         {event?.command && (
@@ -835,63 +880,60 @@ function ExecuteEvent({ event, index }: { event: Execute; index: number }) {
             <Highlighter>{event.command}</Highlighter>
           </div>
         )}
-        {event.results.length > 0 && (
-          <div className="px-4 dark:bg-slate-900">
-            <Disclosure defaultOpen={true}>
-              {({ open }) => (
-                <>
-                  <Disclosure.Button className="w-full py-2 ">
-                    <div className="flex w-full flex-row justify-start">
-                      <p className="text-xs">Results</p>
-                      {open ? (
-                        <ChevronDownIcon className="h-4 w-4 text-slate-400 dark:text-slate-500"></ChevronDownIcon>
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4 text-slate-400 dark:text-slate-500"></ChevronRightIcon>
-                      )}
-                    </div>
-                  </Disclosure.Button>
-                  <Disclosure.Panel>
-                    <div className="mb-2 flex flex-col space-y-2 text-sm dark:text-slate-300">
-                      {event.results.map((result, index) => {
-                        const renderResult = () => {
-                          if (result.type === "QUERY") {
-                            return (
-                              <div className="flex justify-between">
-                                <span>
-                                  Returned {result.columnCount} Column(s) with{" "}
-                                  {result.rowCount} row(s).
-                                </span>
-                              </div>
-                            );
-                          } else if (result.type === "ERROR") {
-                            return (
-                              <div className="flex justify-between text-red-500">
-                                <span>
-                                  Query resulted in Error "{result.message}""
-                                  with code "{result.errorCode}"".
-                                </span>
-                              </div>
-                            );
-                          } else if (result.type === "UPDATE") {
-                            return (
-                              <div className="flex justify-between">
-                                <span>
-                                  Statement affected {result.rowsUpdated}{" "}
-                                  row(s).
-                                </span>
-                              </div>
-                            );
-                          }
-                        };
-                        return <div key={index}>{renderResult()}</div>;
-                      })}
-                    </div>
-                  </Disclosure.Panel>
-                </>
-              )}
-            </Disclosure>
-          </div>
-        )}
+        <div className="px-4 dark:bg-slate-900">
+          <Disclosure defaultOpen={true}>
+            {({ open }) => (
+              <>
+                <Disclosure.Button className="w-full py-2 ">
+                  <div className="flex w-full flex-row justify-start">
+                    <p className="text-xs">Results</p>
+                    {open ? (
+                      <ChevronDownIcon className="h-4 w-4 text-slate-400 dark:text-slate-500"></ChevronDownIcon>
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4 text-slate-400 dark:text-slate-500"></ChevronRightIcon>
+                    )}
+                  </div>
+                </Disclosure.Button>
+                <Disclosure.Panel>
+                  <div className="mb-2 flex flex-col space-y-2 text-sm dark:text-slate-300">
+                    {event.results.map((result, index) => {
+                      const renderResult = () => {
+                        if (result.type === "QUERY") {
+                          return (
+                            <div className="flex justify-between">
+                              <span>
+                                Returned {result.columnCount} Column(s) with{" "}
+                                {result.rowCount} row(s).
+                              </span>
+                            </div>
+                          );
+                        } else if (result.type === "ERROR") {
+                          return (
+                            <div className="flex justify-between text-red-500">
+                              <span>
+                                Query resulted in Error "{result.message}"" with
+                                code "{result.errorCode}"".
+                              </span>
+                            </div>
+                          );
+                        } else if (result.type === "UPDATE") {
+                          return (
+                            <div className="flex justify-between">
+                              <span>
+                                Statement affected {result.rowsUpdated} row(s).
+                              </span>
+                            </div>
+                          );
+                        }
+                      };
+                      return <div key={index}>{renderResult()}</div>;
+                    })}
+                  </div>
+                </Disclosure.Panel>
+              </>
+            )}
+          </Disclosure>
+        </div>
       </div>
     </div>
   );
@@ -954,149 +996,32 @@ function Comment({
   );
 }
 
-function ReviewEvent({ event, index }: { event: Review; index: number }) {
-  const notificationText = (): JSX.Element => {
-    switch (event.action) {
-      case "APPROVE":
-        return (
-          <div className="text-sm text-slate-500">
-            {event.author?.fullName} approved
-          </div>
-        );
-      case "REJECT":
-        return (
-          <div className="text-sm text-red-500">
-            {event.author?.fullName} rejected
-          </div>
-        );
-      case "REQUEST_CHANGE":
-        return (
-          <div className="text-sm text-red-500">
-            {event.author?.fullName} requested changes
-          </div>
-        );
-    }
-  };
-
-  const notificationIcon = (): JSX.Element => {
-    switch (event.action) {
-      case "APPROVE":
-        return (
-          <div className="z-0 -ml-1 mr-2 inline-block h-4 w-4 items-center bg-slate-50 fill-slate-950 pb-6 align-text-bottom dark:bg-slate-950 dark:fill-slate-50">
-            <div className="inline pr-2 text-green-600">
-              <FontAwesomeIcon icon={solid("check")} />
-            </div>
-          </div>
-        );
-      case "REJECT":
-        return (
-          <div className="z-0 -ml-1 mr-2 inline-block h-4 w-4 items-center bg-slate-50 fill-slate-950 pb-6 dark:bg-slate-950 dark:fill-slate-50">
-            <div className="inline pr-2 text-red-500">
-              <FontAwesomeIcon icon={solid("times")} />
-            </div>
-          </div>
-        );
-      case "REQUEST_CHANGE":
-        return (
-          <div className="z-0 -ml-1 mr-2 inline-block h-4 w-4 items-center bg-slate-50 fill-slate-950 pb-6 dark:bg-slate-950 dark:fill-slate-50">
-            <div className="inline pr-2 text-red-500">
-              <FontAwesomeIcon icon={solid("pen")} />
-            </div>
-          </div>
-        );
-    }
-  };
-  return (
-    <div>
-      <div className="relative ml-4 flex py-4">
-        {(!(index === 0) && (
-          <div className="absolute bottom-0 left-0 top-0 block w-0.5 whitespace-pre bg-slate-700">
-            {" "}
-          </div>
-        )) || (
-          <div className="absolute bottom-0 left-0 top-5 block w-0.5 whitespace-pre bg-slate-700">
-            {" "}
-          </div>
-        )}
-        <div className="flex justify-center align-middle">
-          {notificationIcon()}
-          {notificationText()}
-        </div>
-      </div>
-      <div className="relative rounded-md border shadow-md dark:border-slate-700 dark:shadow-none">
-        <InitialBubble name={event?.author?.fullName} />
-        <p className="flex justify-between rounded-t-md px-4 pt-2 text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-500">
-          <div>
-            {((event?.createdAt && timeSince(event.createdAt)) as
-              | string
-              | undefined) || ""}
-          </div>
-        </p>
-        <div className="rounded-b-md px-4 py-3 dark:bg-slate-900">
-          <ReactMarkdown components={componentMap}>
-            {event.comment}
-          </ReactMarkdown>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CommentBox({
-  sendReview,
+  addComment,
+  approve,
   userId,
 }: {
-  sendReview: (comment: string, type: ReviewTypes) => Promise<void>;
+  addComment: (comment: string) => Promise<void>;
+  approve: (comment: string) => Promise<void>;
   userId?: string;
 }) {
   const [commentFormVisible, setCommentFormVisible] = useState<boolean>(true);
   const [comment, setComment] = useState<string>("");
 
-  const [chosenReviewType, setChosenReviewType] = useState<ReviewTypes>(
-    ReviewTypes.Comment,
-  );
-
   const userContext = useContext(UserStatusContext);
 
-  const handleReview = async () => {
-    await sendReview(comment, chosenReviewType);
+  const handleAddComment = async () => {
+    await addComment(comment);
+    setComment("");
+  };
+
+  const handleApprove = async () => {
+    await approve(comment);
     setComment("");
   };
 
   const isOwnRequest =
     userContext.userStatus && userContext.userStatus?.id === userId;
-
-  const reviewTypes = [
-    {
-      id: ReviewTypes.Comment,
-      title: "Comment",
-      description: "Submit a general comment without explicit approval",
-      enabled: true,
-      danger: false,
-    },
-    {
-      id: ReviewTypes.Approve,
-      title: "Approve",
-      description: "Give your approval to execute this request",
-      enabled: !isOwnRequest,
-      danger: false,
-    },
-    {
-      id: ReviewTypes.RequestChange,
-      title: "Request Changes",
-      description:
-        "Request a change on this Request, you can later approve it again",
-      enabled: !isOwnRequest,
-      danger: true,
-    },
-    {
-      id: ReviewTypes.Reject,
-      title: "Reject",
-      description: "Reject this request from ever executing",
-      enabled: !isOwnRequest,
-      danger: true,
-    },
-  ];
   return (
     <div>
       <div className="relative ml-4 py-4">
@@ -1154,21 +1079,21 @@ function CommentBox({
             </ReactMarkdown>
           )}
           <div className="p-1">
-            <div className="center mb-2 flex flex-col">
-              <ReviewRadioBox
-                reviewTypes={reviewTypes}
-                setChosenReviewType={setChosenReviewType}
-                chosenType={chosenReviewType}
-              ></ReviewRadioBox>
-              <div className="mb-2 flex justify-end">
-                <Button
-                  id="submit"
-                  type="submit"
-                  onClick={() => void handleReview()}
-                >
-                  Review
-                </Button>
-              </div>
+            <div className="mb-2 flex justify-end">
+              <Button
+                className="mr-2"
+                id="addComment"
+                onClick={() => void handleAddComment()}
+              >
+                Add Comment
+              </Button>
+              <Button
+                id="approve"
+                type={`${isOwnRequest ? "disabled" : "submit"}`}
+                onClick={() => void handleApprove()}
+              >
+                Approve
+              </Button>
             </div>
           </div>
         </div>
@@ -1176,71 +1101,5 @@ function CommentBox({
     </div>
   );
 }
-function ReviewRadioBox({
-  reviewTypes,
-  setChosenReviewType,
-  chosenType,
-}: {
-  reviewTypes: {
-    id: ReviewTypes;
-    title: string;
-    description: string;
-    enabled: boolean;
-    danger: boolean;
-  }[];
-  setChosenReviewType: (reviewType: ReviewTypes) => void;
-  chosenType: ReviewTypes;
-}) {
-  return (
-    <fieldset>
-      <legend className="text-sm font-semibold leading-6 text-slate-900 dark:text-slate-50">
-        Review
-      </legend>
-      <div className="mt-3 space-y-3">
-        {reviewTypes.map((reviewType) => (
-          <div key={reviewType.id} className="flex items-center">
-            <input
-              id={reviewType.id}
-              name="review-type"
-              type="radio"
-              defaultChecked={reviewType.id === chosenType}
-              className={`h-4 w-4 border-slate-300 focus:ring-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 ${
-                reviewType.danger ? "text-red-600" : "text-indigo-600"
-              }`}
-              onChange={() => setChosenReviewType(reviewType.id)}
-              disabled={!reviewType.enabled}
-            />
-            <span className="ml-3 block">
-              <label
-                htmlFor={reviewType.id}
-                className={`text-sm font-medium leading-6 ${
-                  reviewType.enabled
-                    ? reviewType.danger
-                      ? "text-red-600 dark:text-red-400"
-                      : "text-slate-900 dark:text-slate-50"
-                    : "text-slate-400 dark:text-slate-500"
-                }`}
-              >
-                {reviewType.title}
-              </label>
-              <span>
-                <p
-                  className={`text-xs ${
-                    reviewType.enabled
-                      ? reviewType.danger
-                        ? "text-red-500 dark:text-red-400"
-                        : "text-slate-500 dark:text-slate-400"
-                      : "text-slate-400 dark:text-slate-500"
-                  }`}
-                >
-                  {reviewType.description}
-                </p>
-              </span>
-            </span>
-          </div>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
+
 export default RequestReview;
