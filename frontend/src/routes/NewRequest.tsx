@@ -19,7 +19,7 @@ import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
 import Modal from "../components/Modal";
 import SQLDumpConfirm from "../components/SQLDumpConfirm";
-import { getSQLDumpRequest } from "../api/ExecutionRequestApi"
+import { getSQLDumpRequest } from "../api/ExecutionRequestApi";
 
 const DatasourceExecutionRequestSchema = z
   .object({
@@ -32,7 +32,8 @@ const DatasourceExecutionRequestSchema = z
   })
   .refine(
     (data) =>
-      data.type === "TemporaryAccess" || "GetSQLDump" ||
+      data.type === "TemporaryAccess" ||
+      "GetSQLDump" ||
       (!!data.statement && data.type === "SingleExecution"),
     {
       message: "If you create a query request an SQL statement is rquired",
@@ -109,42 +110,44 @@ export default function ConnectionChooser() {
   const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
 
   const location = useLocation();
-  
+
   const handleSQLDump = async (connectionId: string) => {
     // TODO: Add loading effect and toastify
     try {
       // Show save file picker with default file name
       const fileHandle = await (window as any).showSaveFilePicker({
         suggestedName: `${connectionId}.sql`,
-        types: [{
-          description: 'SQL Files',
-          accept: {
-            'text/sql': ['.sql'],
+        types: [
+          {
+            description: "SQL Files",
+            accept: {
+              "text/sql": [".sql"],
+            },
           },
-        }],
+        ],
       });
-  
+
       // Get the writable stream to write the SQL dump
       const writableStream = await fileHandle.createWritable();
-  
+
       // Fetch SQL dump data
       const sqlBlob = await getSQLDumpRequest(connectionId);
-  
+
       // Convert Blob to ArrayBuffer
       const arrayBuffer = await sqlBlob.arrayBuffer();
-  
+
       // Write ArrayBuffer to the writable stream
       await writableStream.write(arrayBuffer);
-  
+
       // Close the writable stream
       await writableStream.close();
     } catch (error) {
-      console.error('Error fetching or saving SQL dump:', error);
+      console.error("Error fetching or saving SQL dump:", error);
     } finally {
       setShowSQLDumpModal(false);
     }
   };
-  
+
   const SQLDumpModal = () => {
     if (!showSQLDumpModal || !chosenConnection) return null;
     return (
@@ -216,7 +219,7 @@ export default function ConnectionChooser() {
                       className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
                     >
                       {connections.map((connection) => (
-                        <>  
+                        <>
                           <Card
                             header={connection.displayName}
                             subheader={connection.description}
@@ -349,7 +352,9 @@ const DatasourceExecutionRequestForm = ({
             className="block w-full bg-slate-50 p-0 text-slate-900 ring-0 placeholder:text-slate-400 focus:ring-0 focus-visible:outline-none dark:bg-slate-950 dark:text-slate-50 sm:text-sm sm:leading-6"
             id="title-input"
             type="text"
-            placeholder={mode === "GetSQLDump" ? "Give the request a title" : "My query"}
+            placeholder={
+              mode === "GetSQLDump" ? "Give the request a title" : "My query"
+            }
             {...register("title")}
           />
           {errors.title && (

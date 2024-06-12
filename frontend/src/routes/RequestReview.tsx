@@ -642,7 +642,11 @@ function DatasourceRequestBox({
               "bg-slate-500"
             }`}
           ></div>
-          {request?.type == "SingleExecution" ? "Run Query" : "Start Session"}
+          {request?.type == "SingleExecution"
+            ? "Run Query"
+            : request?.type == "TemporaryAccess"
+            ? "Start Session"
+            : "Get SQL Dump"}
         </Button>
       </div>
     </div>
