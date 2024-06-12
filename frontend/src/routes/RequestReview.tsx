@@ -21,6 +21,7 @@ import {
   DatasourceExecutionRequestResponseWithComments,
   executeCommand,
   KubernetesExecuteResponse,
+  getSQLDumpRequest,
 } from "../api/ExecutionRequestApi";
 import Button from "../components/Button";
 import { mapStatus, mapStatusToLabelColor, timeSince } from "./Requests";
@@ -43,6 +44,9 @@ import ShellResult from "../components/ShellResult";
 import { Disclosure } from "@headlessui/react";
 import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import MenuDropDown from "../components/MenuDropdown";
+import Modal from "../components/Modal";
+import SQLDumpConfirm from "../components/SQLDumpConfirm";
+import { ConnectionResponse } from "../api/DatasourceApi";
 
 interface RequestReviewParams {
   requestId: string;
@@ -502,6 +506,11 @@ function DatasourceRequestBox({
   updateRequest: (request: { statement?: string }) => Promise<void>;
 }) {
   const [editMode, setEditMode] = useState(false);
+  const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
+  const [chosenConnection, setChosenConnection] = useState<
+    ConnectionResponse | undefined
+  >(undefined);
+
   const navigate = useNavigate();
   const [statement, setStatement] = useState(request?.statement || "");
   const changeStatement = async (
@@ -567,7 +576,79 @@ function DatasourceRequestBox({
           },
         ]
       : []),
+    ...(request?.type == "GetSQLDump"
+      ? [
+          {
+            onClick: () => {
+              setChosenConnection(request.connection);
+              setShowSQLDumpModal(true);
+            },
+            enabled: request?.reviewStatus === "APPROVED",
+            text: "Get SQL Dump",
+          },
+        ]
+      : []),
   ];
+
+  const handleSQLDump = async (connectionId: string) => {
+    // TODO: Add loading effect and toastify
+    try {
+      // Show save file picker with default file name
+      const fileHandle = await (window as any).showSaveFilePicker({
+        suggestedName: `${connectionId}.sql`,
+        types: [
+          {
+            description: "SQL Files",
+            accept: {
+              "text/sql": [".sql"],
+            },
+          },
+        ],
+      });
+
+      // Get the writable stream to write the SQL dump
+      const writableStream = await fileHandle.createWritable();
+
+      // Fetch SQL dump data
+      const sqlBlob = await getSQLDumpRequest(connectionId);
+
+      // Convert Blob to ArrayBuffer
+      const arrayBuffer = await sqlBlob.arrayBuffer();
+
+      // Write ArrayBuffer to the writable stream
+      await writableStream.write(arrayBuffer);
+
+      // Close the writable stream
+      await writableStream.close();
+    } catch (error) {
+      console.error("Error fetching or saving SQL dump:", error);
+    } finally {
+      setShowSQLDumpModal(false);
+    }
+  };
+
+  const SQLDumpModal = () => {
+    if (!showSQLDumpModal || !chosenConnection) return null;
+    return (
+      <Modal setVisible={setShowSQLDumpModal}>
+        <SQLDumpConfirm
+          title="Get SQL Dump"
+          message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
+          onConfirm={() => handleSQLDump(chosenConnection.id)}
+          onCancel={() => setShowSQLDumpModal(false)}
+        />
+      </Modal>
+    );
+  };
+
+  const handleButtonClick = () => {
+    if (request?.type === "GetSQLDump") {
+      setChosenConnection(request.connection);
+      setShowSQLDumpModal(true);
+    } else {
+      void runQuery();
+    }
+  };
 
   return (
     <div>
@@ -629,25 +710,27 @@ function DatasourceRequestBox({
         </div>
       </div>
       <div className="relative mt-3 flex justify-end">
-        <MenuDropDown items={menuDropDownItems}></MenuDropDown>
+        <MenuDropDown items={menuDropDownItems} />
         <Button
           className=""
           id="runQuery"
-          type={(request?.reviewStatus == "APPROVED" && "submit") || "disabled"}
-          onClick={() => void runQuery()}
+          type={request?.reviewStatus === "APPROVED" ? "submit" : "disabled"}
+          onClick={handleButtonClick}
         >
           <div
             className={`play-triangle mr-2 inline-block h-3 w-2 ${
-              (request?.reviewStatus == "APPROVED" && "bg-slate-50") ||
-              "bg-slate-500"
+              request?.reviewStatus === "APPROVED"
+                ? "bg-slate-50"
+                : "bg-slate-500"
             }`}
           ></div>
-          {request?.type == "SingleExecution"
+          {request?.type === "SingleExecution"
             ? "Run Query"
-            : request?.type == "TemporaryAccess"
+            : request?.type === "TemporaryAccess"
             ? "Start Session"
             : "Get SQL Dump"}
         </Button>
+        {SQLDumpModal()}
       </div>
     </div>
   );

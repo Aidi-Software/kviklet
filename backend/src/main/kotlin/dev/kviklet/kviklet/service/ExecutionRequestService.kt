@@ -78,6 +78,8 @@ class ExecutionRequestService(
         request: CreateExecutionRequestRequest,
         userId: String,
     ): ExecutionRequestDetails {
+        println("------------Create---------------")
+        println("request: $request")
         return when (request) {
             is CreateDatasourceExecutionRequestRequest -> {
                 createDatasourceRequest(connectionId, request, userId)
@@ -272,6 +274,8 @@ class ExecutionRequestService(
 
         val queryToExecute = when (executionRequest.request.type) {
             RequestType.SingleExecution -> executionRequest.request.statement!!
+            // TODO:
+            RequestType.GetSQLDump -> executionRequest.request.statement!!
             RequestType.TemporaryAccess -> query ?: throw MissingQueryException(
                 "For temporary access requests the query param is required",
             )
@@ -530,6 +534,11 @@ fun ExecutionRequestDetails.raiseIfAlreadyExecuted() {
             RequestType.TemporaryAccess ->
                 throw AlreadyExecutedException(
                     "This request has timed out, temporary access is only valid for 60 minutes!",
+                )
+            // TODO: Modify the following for sql dump actions
+            RequestType.GetSQLDump ->
+                throw AlreadyExecutedException(
+                    "This request has already been executed, can only execute a configured amount of times!",
                 )
         }
     }

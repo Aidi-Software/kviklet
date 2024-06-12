@@ -17,9 +17,6 @@ import Button from "../components/Button";
 import { Disclosure } from "@headlessui/react";
 import { Pod, getPods } from "../api/KubernetesApi";
 import useConnections from "../hooks/connections";
-import Modal from "../components/Modal";
-import SQLDumpConfirm from "../components/SQLDumpConfirm";
-import { getSQLDumpRequest } from "../api/ExecutionRequestApi";
 
 const DatasourceExecutionRequestSchema = z
   .object({
@@ -107,60 +104,8 @@ export default function ConnectionChooser() {
   const [chosenMode, setChosenMode] = useState<
     "SingleExecution" | "TemporaryAccess" | "GetSQLDump" | undefined
   >(undefined);
-  const [showSQLDumpModal, setShowSQLDumpModal] = useState(false);
 
   const location = useLocation();
-
-  const handleSQLDump = async (connectionId: string) => {
-    // TODO: Add loading effect and toastify
-    try {
-      // Show save file picker with default file name
-      const fileHandle = await (window as any).showSaveFilePicker({
-        suggestedName: `${connectionId}.sql`,
-        types: [
-          {
-            description: "SQL Files",
-            accept: {
-              "text/sql": [".sql"],
-            },
-          },
-        ],
-      });
-
-      // Get the writable stream to write the SQL dump
-      const writableStream = await fileHandle.createWritable();
-
-      // Fetch SQL dump data
-      const sqlBlob = await getSQLDumpRequest(connectionId);
-
-      // Convert Blob to ArrayBuffer
-      const arrayBuffer = await sqlBlob.arrayBuffer();
-
-      // Write ArrayBuffer to the writable stream
-      await writableStream.write(arrayBuffer);
-
-      // Close the writable stream
-      await writableStream.close();
-    } catch (error) {
-      console.error("Error fetching or saving SQL dump:", error);
-    } finally {
-      setShowSQLDumpModal(false);
-    }
-  };
-
-  const SQLDumpModal = () => {
-    if (!showSQLDumpModal || !chosenConnection) return null;
-    return (
-      <Modal setVisible={setShowSQLDumpModal}>
-        <SQLDumpConfirm
-          title="Get SQL Dump"
-          message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
-          onConfirm={() => handleSQLDump(chosenConnection.id)}
-          onCancel={() => setShowSQLDumpModal(false)}
-        />
-      </Modal>
-    );
-  };
 
   useEffect(() => {
     const state = location.state as PreConfiguredState;
@@ -239,11 +184,9 @@ export default function ConnectionChooser() {
                               setChosenConnection(connection);
                               setChosenMode("GetSQLDump");
                               close();
-                              // setShowSQLDumpModal(true);
                             }}
                             connectionType={connection._type}
                           ></Card>
-                          {SQLDumpModal()}
                         </>
                       ))}
                     </ul>
