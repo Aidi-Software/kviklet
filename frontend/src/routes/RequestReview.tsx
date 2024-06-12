@@ -518,7 +518,9 @@ function DatasourceRequestBox({
   const questionText =
     request?.type == "SingleExecution"
       ? " wants to execute a statement on "
-      : " wants to have access to ";
+      : request?.type == "TemporaryAccess"
+      ? " wants to have access to "
+      : " wants to get a SQL dump from ";
 
   const navigateCopy = () => {
     navigate(`/new`, {
