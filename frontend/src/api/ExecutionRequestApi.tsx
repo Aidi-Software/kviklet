@@ -81,7 +81,7 @@ const ExecuteEvent = withType(
 
 const RawDatasourceRequestSchema = z.object({
   id: z.string(),
-  type: z.enum(["TemporaryAccess", "SingleExecution"]),
+  type: z.enum(["TemporaryAccess", "SingleExecution", "GetSQLDump"]),
   author: userResponseSchema,
   title: z.string().min(1),
   description: z.string(),
