@@ -51,6 +51,14 @@ import org.springframework.core.io.InputStreamResource
 import java.io.File
 import java.io.FileInputStream
 import dev.kviklet.kviklet.service.ConnectionService
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.reactor.asFlux
+import reactor.core.publisher.Flux
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.BufferedInputStream
+
+
 
 // TODO: Move to service.dto
 interface SecuredDomainObject 
@@ -78,8 +86,6 @@ class ExecutionRequestService(
         request: CreateExecutionRequestRequest,
         userId: String,
     ): ExecutionRequestDetails {
-        println("------------Create---------------")
-        println("request: $request")
         return when (request) {
             is CreateDatasourceExecutionRequestRequest -> {
                 createDatasourceRequest(connectionId, request, userId)
@@ -177,6 +183,54 @@ class ExecutionRequestService(
     }
     
     @Transactional
+    fun streamSQLDump(connectionId: String): Flux<ByteArray> {
+        return Flux.create { sink ->
+            var inputStream: BufferedInputStream? = null
+            try {
+                val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
+
+                if (connection is DatasourceConnection) {
+                    val command = arrayOf(
+                        "mysqldump",
+                        "-u${connection.username}",
+                        "-p${connection.password}",
+                        "-h${connection.hostname}",
+                        "-P${connection.port}",
+                        "--databases",
+                        connection.databaseName
+                    )
+                    println("Constructed mysqldump command: ${command.joinToString(" ")}")
+
+                    val process = Runtime.getRuntime().exec(command)
+                    inputStream = BufferedInputStream(process.inputStream)
+
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        sink.next(buffer.copyOf(bytesRead))
+                        println("Read and emitted ${bytesRead} bytes")
+                    }
+
+                    val exitCode = process.waitFor()
+                    if (exitCode != 0) {
+                        sink.error(Exception("mysqldump command failed with exit code: $exitCode"))
+                        println("mysqldump command failed with exit code: $exitCode")
+                    } else {
+                        sink.complete()
+                        println("Completed streaming SQL dump for connectionId: $connectionId")
+                    }
+                } else {
+                    sink.error(Exception("Invalid connection type for connectionId: $connectionId"))
+                }
+            } catch (e: Exception) {
+                sink.error(Exception("Other unexpected error occurred: ${e.message}"))
+            } finally {
+                inputStream?.close()
+            }
+        }.onBackpressureBuffer()
+    }
+
     // TODO: Add the permission back
     // @Policy(Permission.EXECUTION_REQUEST_GET)
     fun generateSQLDump(connectionId: String): SQLDumpResponse {

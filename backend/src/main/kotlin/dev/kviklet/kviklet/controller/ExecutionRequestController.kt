@@ -52,6 +52,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.http.MediaType
 import org.springframework.http.HttpHeaders
 import org.springframework.core.io.InputStreamResource
+import reactor.core.publisher.Flux
+
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "connectionType")
 @JsonSubTypes(
@@ -530,6 +532,17 @@ data class ProxyResponse(
 class ExecutionRequestController(
     val executionRequestService: ExecutionRequestService,
 ) {
+    @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
+    @GetMapping("/stream-sql-dump/{connectionId}")
+    fun streamSQLDump(@PathVariable connectionId: String): ResponseEntity<Flux<ByteArray>> {
+        val responseFlux = executionRequestService.streamSQLDump(connectionId)
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${connectionId}.sql\"")
+            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            .body(responseFlux)
+    }
+
     @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
     @GetMapping("/sql-dump/{connectionId}")
     fun getSQLDump(@PathVariable connectionId: String): ResponseEntity<InputStreamResource> {
