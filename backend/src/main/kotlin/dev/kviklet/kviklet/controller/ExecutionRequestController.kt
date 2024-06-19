@@ -532,7 +532,7 @@ data class ProxyResponse(
 class ExecutionRequestController(
     val executionRequestService: ExecutionRequestService,
 ) {
-    @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
+    @Operation(summary = "Export Databse Request Streamed", description = "Exports database data incrementally by sending small portions continuously, avoiding the need to save any temporary file in memory.")
     @GetMapping("/stream-sql-dump/{connectionId}")
     fun streamSQLDump(@PathVariable connectionId: String): ResponseEntity<Flux<ByteArray>> {
         val responseFlux = executionRequestService.streamSQLDump(connectionId)
@@ -543,7 +543,7 @@ class ExecutionRequestController(
             .body(responseFlux)
     }
 
-    @Operation(summary = "Download SQL File", description = "Get SQL dump by connectionId")
+    @Operation(summary = "Export Databse Request At Once", description = "Get SQL dump by connectionId")
     @GetMapping("/sql-dump/{connectionId}")
     fun getSQLDump(@PathVariable connectionId: String): ResponseEntity<InputStreamResource> {
         val response = executionRequestService.generateSQLDump(connectionId)
