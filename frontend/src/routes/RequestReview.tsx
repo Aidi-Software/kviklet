@@ -22,6 +22,7 @@ import {
   executeCommand,
   KubernetesExecuteResponse,
   getSQLDumpRequest,
+  getSQLDumpStreamedRequest,
 } from "../api/ExecutionRequestApi";
 import Button from "../components/Button";
 import { mapStatus, mapStatusToLabelColor, timeSince } from "./Requests";
@@ -590,10 +591,9 @@ function DatasourceRequestBox({
       : []),
   ];
 
-  const handleSQLDump = async (connectionId: string) => {
-    // TODO: Add loading effect and toastify
+  const getFileHandle = async (connectionId: string) => {
     try {
-      // Show save file picker with default file name
+      // Use the Save File Picker to get a file handle
       const fileHandle = await (window as any).showSaveFilePicker({
         suggestedName: `${connectionId}.sql`,
         types: [
@@ -605,6 +605,43 @@ function DatasourceRequestBox({
           },
         ],
       });
+      return fileHandle;
+    } catch (error) {
+      console.error("Error getting file handle:", error);
+      throw error;
+    }
+  };
+
+  const handleStreamSQLDump = async (connectionId: string) => {
+    try {
+      const combinedSQL = await getSQLDumpStreamedRequest(connectionId);
+
+      // Get file handle using the utility function
+      const fileHandle = await getFileHandle(connectionId);
+
+      // Create a writable stream for the file
+      const writableStream = await fileHandle.createWritable();
+
+      // Write the combined SQL content to the file
+      await writableStream.write(
+        new Blob([combinedSQL], { type: "text/plain" }),
+      );
+
+      // Close the file and release the stream
+      await writableStream.close();
+
+      console.log("File saved successfully.");
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setShowSQLDumpModal(false);
+    }
+  };
+
+  const handleSQLDump = async (connectionId: string) => {
+    try {
+      // Get file handle using the utility function
+      const fileHandle = await getFileHandle(connectionId);
 
       // Get the writable stream to write the SQL dump
       const writableStream = await fileHandle.createWritable();
@@ -634,7 +671,8 @@ function DatasourceRequestBox({
         <SQLDumpConfirm
           title="Get SQL Dump"
           message={`Are you sure you want to get sql dump from database ${chosenConnection?.displayName}?`}
-          onConfirm={() => handleSQLDump(chosenConnection.id)}
+          onConfirm={() => handleStreamSQLDump(chosenConnection.id)} //Export Databse Request Streamed
+          // onConfirm={() => handleSQLDump(chosenConnection.id)} //Export Databse Request At Once
           onCancel={() => setShowSQLDumpModal(false)}
         />
       </Modal>

@@ -286,6 +286,34 @@ const addReviewToRequest = async (
   return;
 };
 
+const getSQLDumpStreamedRequest = async (
+  connectionId: string,
+): Promise<string> => {
+  const response = await fetch(`${requestUrl}stream-sql-dump/${connectionId}`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch SQL dump: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const encodedStrings: string[] = await response.json();
+  const sqlStrings: string[] = [];
+
+  encodedStrings.forEach((encodedString) => {
+    // Decode the base64 string
+    const decodedString = atob(encodedString);
+    // Push decoded SQL to array
+    sqlStrings.push(decodedString);
+  });
+
+  // Combine all SQL strings into one
+  return sqlStrings.join("");
+};
+
 const getSQLDumpRequest = async (connectionId: string): Promise<Blob> => {
   const response = await fetch(`${requestUrl}sql-dump/${connectionId}`, {
     method: "GET",
@@ -423,6 +451,7 @@ export {
   getSingleRequest,
   addCommentToRequest,
   addReviewToRequest,
+  getSQLDumpStreamedRequest,
   getSQLDumpRequest,
   runQuery,
   patchRequest,
