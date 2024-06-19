@@ -57,7 +57,7 @@ import reactor.core.publisher.Flux
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.BufferedInputStream
-
+import java.io.IOException
 
 
 // TODO: Move to service.dto
@@ -186,10 +186,12 @@ class ExecutionRequestService(
     fun streamSQLDump(connectionId: String): Flux<ByteArray> {
         return Flux.create { sink ->
             var inputStream: BufferedInputStream? = null
+            var process: Process? = null
             try {
                 val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
 
                 if (connection is DatasourceConnection) {
+                    // Construct the mysqldump command
                     val command = arrayOf(
                         "mysqldump",
                         "-u${connection.username}",
@@ -199,34 +201,43 @@ class ExecutionRequestService(
                         "--databases",
                         connection.databaseName
                     )
-                    println("Constructed mysqldump command: ${command.joinToString(" ")}")
 
-                    val process = Runtime.getRuntime().exec(command)
+                    // Execute the mysqldump command
+                    process = Runtime.getRuntime().exec(command)
                     inputStream = BufferedInputStream(process.inputStream)
 
+                    // Buffer to read chunks of data from the process input stream
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
 
+                    // Read from the input stream in chunks and send each chunk to the Flux sink
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         sink.next(buffer.copyOf(bytesRead))
-                        println("Read and emitted ${bytesRead} bytes")
+                        logger.info("Read and sent ${bytesRead} bytes")
                     }
 
+                    // Wait for the process to complete and check the exit code
                     val exitCode = process.waitFor()
                     if (exitCode != 0) {
+                        // If the process failed, send an error to the Flux sink
                         sink.error(Exception("mysqldump command failed with exit code: $exitCode"))
-                        println("mysqldump command failed with exit code: $exitCode")
                     } else {
                         sink.complete()
-                        println("Completed streaming SQL dump for connectionId: $connectionId")
                     }
                 } else {
+                    // If the connection type is invalid, send an error to the Flux sink
                     sink.error(Exception("Invalid connection type for connectionId: $connectionId"))
                 }
             } catch (e: Exception) {
-                sink.error(Exception("Other unexpected error occurred: ${e.message}"))
+                sink.error(Exception("Unexpected error occurred: ${e.message}"))
             } finally {
-                inputStream?.close()
+                // Ensure the input stream is closed properly
+                try {
+                    inputStream?.close()
+                } catch (e: IOException) {
+                    throw Exception("Error closing inputStream: ${e.message}")
+                }
+                process?.destroy()
             }
         }.onBackpressureBuffer()
     }
