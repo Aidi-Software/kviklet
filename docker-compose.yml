@@ -51,5 +51,7 @@ services:
       - "80:80"
     environment:
       - spring.profiles.active=e2e
+      - DATABASE_HOST=kviklet-postgres
+      - DATABASE_PORT=5432
     depends_on:
       - kviklet-postgres
