@@ -1,20 +1,22 @@
-Run all containers:
+## Dev Setup (MacOS)
 
-```
-docker-compose up -d
-```
-
-Only run the kviklet with postgres:
+### Run the app in containers:
 
 ```
 docker compose build --no-cache kviklet kviklet-postgres
-docker-compose up -d kviklet kviklet-postgres
+docker-compose up -d kviklet kviklet-postgres mysql
 ```
 
-#### Default login (with docker containers):
+#### Steps to create new request
 
-User: testUser@example.com
-Password: testPassword
+1. Go to localhost and login with default user:
+   User: testUser@example.com
+   Password: testPassword
+
+2. Create new user via the Settings
+3. Create new database connection
+   Note: The Hostname should be the mysql container's IP
+   Get container IP: docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <container_id>
 
 ### Run frontend container:
 
@@ -23,11 +25,15 @@ docker build --no-cache -t frontend .
 docker run --name frontend -d -p 8888:8888 frontend
 ```
 
-## Dev Setup (MacOS)
-
 ### Run the app locally:
 
 ```
+# Start a mysql server
+mysql.server start --port=3307
+
+# Start a postgresql that serves kviklet on port 5432
+brew services start postgresql@16
+
 # frontend
 cd frontend/
 npm run start
@@ -35,10 +41,4 @@ npm run start
 # backend
 cd backend/
 ./gradlew bootRun
-
-# mysql
-mysql.server start --port=3307
-
-# postgresql
-brew services start postgresql@16
 ```
