@@ -263,7 +263,7 @@ class ExecutionRequestService(
                     connection.databaseName,
                     "--result-file=${tempFile.absolutePath}"
                 )
-                
+
                 // Execute mysqldump command
                 val process = Runtime.getRuntime().exec(command)
                 val exitCode = process.waitFor()
@@ -274,7 +274,8 @@ class ExecutionRequestService(
                     val fileName = "${connectionId}.sql"
                     return SQLDumpResponse(resource, fileName)
                 } else {
-                    throw Exception("mysqldump command failed with exit code: $exitCode")
+                    val errorStream = process.errorStream.bufferedReader().use { it.readText() }
+                    throw Exception("mysqldump command failed: $errorStream")
                 }
             } else {
                 throw Exception("Invalid connection type for connectionId: $connectionId")
