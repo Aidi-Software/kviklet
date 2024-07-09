@@ -9,7 +9,7 @@ docker-compose up -d kviklet kviklet-postgres mysql
 
 #### Steps to create new request
 
-1. Go to localhost and login with default user:
+1. Go to localhost and login with default Admin user:
    User: testUser@example.com
    Password: testPassword
 
