@@ -3,7 +3,7 @@
 ### Run the app in containers:
 
 ```
-docker compose build --no-cache kviklet kviklet-postgres
+docker compose build --no-cache kviklet
 docker-compose up -d kviklet kviklet-postgres mysql
 ```
 
