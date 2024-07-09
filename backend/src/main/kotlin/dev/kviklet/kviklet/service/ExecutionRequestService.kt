@@ -80,8 +80,6 @@ class ExecutionRequestService(
         request: CreateExecutionRequestRequest,
         userId: String,
     ): ExecutionRequestDetails {
-        println("------------Create---------------")
-        println("request: $request")
         return when (request) {
             is CreateDatasourceExecutionRequestRequest -> {
                 createDatasourceRequest(connectionId, request, userId)
