@@ -614,10 +614,11 @@ function DatasourceRequestBox({
 
   const handleStreamSQLDump = async (connectionId: string) => {
     try {
-      const combinedSQL = await getSQLDumpStreamedRequest(connectionId);
-
       // Get file handle using the utility function
       const fileHandle = await getFileHandle(connectionId);
+
+      // Fetch and handle SQL dump data
+      const combinedSQL = await getSQLDumpStreamedRequest(connectionId);
 
       // Create a writable stream for the file
       const writableStream = await fileHandle.createWritable();
