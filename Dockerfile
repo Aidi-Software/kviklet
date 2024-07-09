@@ -10,12 +10,12 @@ COPY --chown=gradle:gradle ./backend .
 # Build the applications
 RUN gradle build  -x kaptTestKotlin -x compileTestKotlin -x test --no-daemon
 
-FROM node:20 as build-frontend
+FROM node:22 as build-frontend
 WORKDIR /app
 COPY ./frontend/package-lock.json ./frontend/package.json ./
 RUN npm ci --production
 COPY ./frontend .
-# RUN npm run build
+RUN npm run build
 
 # Stage 2: Run the application
 FROM amazoncorretto:21
