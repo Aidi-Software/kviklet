@@ -28,7 +28,6 @@ RUN amazon-linux-extras install -y nginx1 && \
     yum clean metadata && \
     yum install -y mariadb
 
-
 COPY ./frontend/docker/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build-frontend /app/build /usr/share/nginx/html
 
