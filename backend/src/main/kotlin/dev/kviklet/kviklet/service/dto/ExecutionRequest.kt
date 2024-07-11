@@ -12,6 +12,7 @@ import net.sf.jsqlparser.JSQLParserException
 import net.sf.jsqlparser.parser.CCJSqlParserUtil
 import java.io.Serializable
 import java.time.LocalDateTime
+import org.springframework.core.io.InputStreamResource
 
 @JvmInline
 value class ExecutionRequestId(private val id: String) :
@@ -288,6 +289,19 @@ data class ExecutionProxy(
     override fun getSecuredObjectId() = request.connection.id.toString()
 
     override fun getDomainObjectType() = Resource.EXECUTION_REQUEST
+
+    override fun getRelated(resource: Resource): SecuredDomainObject? = null
+}
+
+data class SQLDumpResponse(
+    val resource: InputStreamResource,
+    val fileName: String
+) : SecuredDomainObject {
+    override fun getId(): String? { return fileName }
+
+    override fun getDomainObjectType(): Resource {
+        return Resource.EXECUTION_REQUEST
+    }
 
     override fun getRelated(resource: Resource): SecuredDomainObject? = null
 }
