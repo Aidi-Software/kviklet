@@ -10,6 +10,7 @@ import dev.kviklet.kviklet.security.UserDetailsWithId
 import dev.kviklet.kviklet.service.QueryResult
 import java.io.Serializable
 import java.time.LocalDateTime
+import org.springframework.core.io.InputStreamResource
 
 @JvmInline
 value class ExecutionRequestId(private val id: String) : Serializable, SecuredDomainId {
@@ -207,6 +208,19 @@ data class ExecutionProxy(
     override fun getId() = request.id.toString()
 
     override fun getDomainObjectType() = Resource.EXECUTION_REQUEST
+
+    override fun getRelated(resource: Resource): SecuredDomainObject? = null
+}
+
+data class SQLDumpResponse(
+    val resource: InputStreamResource,
+    val fileName: String
+) : SecuredDomainObject {
+    override fun getId(): String? { return fileName }
+
+    override fun getDomainObjectType(): Resource {
+        return Resource.EXECUTION_REQUEST
+    }
 
     override fun getRelated(resource: Resource): SecuredDomainObject? = null
 }

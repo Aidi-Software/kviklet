@@ -33,6 +33,7 @@ import dev.kviklet.kviklet.service.dto.ExecutionStatus
 import dev.kviklet.kviklet.service.dto.KubernetesConnection
 import dev.kviklet.kviklet.service.dto.KubernetesExecutionRequest
 import dev.kviklet.kviklet.service.dto.KubernetesExecutionResult
+import dev.kviklet.kviklet.service.dto.SQLDumpResponse
 import dev.kviklet.kviklet.service.dto.RequestType
 import dev.kviklet.kviklet.service.dto.ReviewAction
 import dev.kviklet.kviklet.service.dto.ReviewEvent
@@ -59,13 +60,6 @@ import java.io.InputStreamReader
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-
-// TODO: Move to service.dto
-interface SecuredDomainObject 
-data class SQLDumpResponse(
-    val resource: InputStreamResource,
-    val fileName: String
-) : SecuredDomainObject
 
 
 @Service
@@ -132,6 +126,49 @@ class ExecutionRequestService(
         )
     }
 
+    /**
+    * Constructs a command list for dumping a SQL database based on the connection type.
+    *
+    * @param connection The DatasourceConnection object containing connection details.
+    * @param outputFile An optional file path where the SQL dump will be saved.
+    * @return A list of strings representing the command to execute.
+    * @throws IllegalArgumentException If the database type is unsupported.
+    */
+    private fun constructSQLDumpCommand(
+        connection: DatasourceConnection, 
+        outputFile: String? = null
+    ): List<String> {
+        return when (connection.type) {
+            DatasourceType.MYSQL -> {
+                val sqlDumpCommand = listOfNotNull(
+                    "mysqldump",
+                    "-u${connection.username}",
+                    "-p${connection.password}",
+                    "-h${connection.hostname}",
+                    "-P${connection.port}",
+                    "--databases",
+                    connection.databaseName,
+                    outputFile?.let { "--result-file=$it" }
+                )
+                sqlDumpCommand
+            }
+            DatasourceType.POSTGRESQL -> {
+                val sqlDumpCommand = listOfNotNull(
+                    "pg_dump",
+                    "-U${connection.username}",
+                    "-h${connection.hostname}",
+                    "-p${connection.port}",
+                    "-d", connection.databaseName,
+                    outputFile?.let { "--file=$it" }
+                )
+                sqlDumpCommand
+            }
+            else -> {
+                throw IllegalArgumentException("Unsupported database type: ${connection.type}")
+            }
+        }
+    }
+
     @Transactional
     @Policy(Permission.EXECUTION_REQUEST_EDIT)
     fun update(
@@ -181,7 +218,13 @@ class ExecutionRequestService(
             command = request.command,
         )
     }
-    
+
+    /**
+    * Streams SQL dump data in real-time for a given datasource connection without having to save any temp files in memory.
+    *
+    * @param connectionId The ID of the datasource connection.
+    * @return A Flux emitting chunks of SQL dump data as byte arrays.
+    */
     @Transactional
     fun streamSQLDump(connectionId: String): Flux<ByteArray> {
         return Flux.create { sink ->
@@ -191,35 +234,11 @@ class ExecutionRequestService(
                 val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
 
                 if (connection is DatasourceConnection) {
-                    // Construct SQL dump command for MySQL or PostgreSQL based on the connection type
-                    val command = when (connection.type) {
-                        DatasourceType.MYSQL -> {
-                            arrayOf(
-                                "mysqldump",
-                                "-u${connection.username}",
-                                "-p${connection.password}",
-                                "-h${connection.hostname}",
-                                "-P${connection.port}",
-                                "--databases",
-                                connection.databaseName
-                            )
-                        }
-                        DatasourceType.POSTGRESQL -> {
-                            arrayOf(
-                                "pg_dump",
-                                "-U", connection.username,
-                                "-h", connection.hostname,
-                                "-p", connection.port.toString(),
-                                "-d", connection.databaseName,
-                            )
-                        }
-                        else -> {
-                            throw IllegalArgumentException("Unsupported database type: ${connection.type}")
-                        }
-                    }
+                    // Construct SQL dump command
+                    val command = constructSQLDumpCommand(connection)
 
-                    // Execute the mysqldump command
-                    process = Runtime.getRuntime().exec(command)
+                    // Execute the SQL dump 
+                    process = Runtime.getRuntime().exec(command.toTypedArray())
                     inputStream = BufferedInputStream(process.inputStream)
 
                     // Buffer to read chunks of data from the process input stream
@@ -258,9 +277,15 @@ class ExecutionRequestService(
             }
         }.onBackpressureBuffer()
     }
-
-    // TODO: Add the permission back
-    // @Policy(Permission.EXECUTION_REQUEST_GET)
+    
+    /**
+    * Generates an SQL dump file for a given datasource connection.
+    *
+    * @param connectionId The ID of the datasource connection.
+    * @return An SQLDumpResponse containing the SQL dump file.
+    */
+    @Transactional
+    @Policy(Permission.EXECUTION_REQUEST_GET)
     fun generateSQLDump(connectionId: String): SQLDumpResponse {
         try {
             // Get the db connection information
@@ -270,36 +295,10 @@ class ExecutionRequestService(
                 // Create a temporary file for SQL dump output
                 val tempFile = File.createTempFile(connectionId, ".sql")
 
-                // Construct SQL dump command for MySQL or PostgreSQL based on the connection type
-                val command = when (connection.type) {
-                    DatasourceType.MYSQL -> {
-                        listOf(
-                            "mysqldump",
-                            "-u${connection.username}",
-                            "-p${connection.password}",
-                            "-h${connection.hostname}",
-                            "-P${connection.port}",
-                            "--databases",
-                            connection.databaseName,
-                            "--result-file=${tempFile.absolutePath}"
-                        )
-                    }
-                    DatasourceType.POSTGRESQL -> {
-                        listOf(
-                            "pg_dump",
-                            "-U${connection.username}",
-                            "-h${connection.hostname}",
-                            "-p${connection.port}",
-                            "-d${connection.databaseName}",
-                            "--file=${tempFile.absolutePath}",
-                        )
-                    }
-                    else -> {
-                        throw IllegalArgumentException("Unsupported database type: ${connection.type}")
-                    }
-                }
+                // Construct SQL dump command
+                val command = constructSQLDumpCommand(connection, tempFile.absolutePath)
 
-                // Execute SQL dump command with timeout
+                // Execute SQL dump
                 val processBuilder = ProcessBuilder(command)
                 processBuilder.redirectErrorStream(true)
                 val process = processBuilder.start()
@@ -326,69 +325,6 @@ class ExecutionRequestService(
             throw Exception("Other unexpected error occurred: ${e.message}")
         }
     }
-    // fun generateSQLDump(connectionId: String): SQLDumpResponse {
-    //     try {
-    //         // Get the db connection information
-    //         val connection = connectionService.getDatasourceConnection(ConnectionId(connectionId))
-
-    //         if (connection is DatasourceConnection) {
-    //             // Create a temporary file for SQL dump output
-    //             val tempFile = File.createTempFile(connectionId, ".sql")
-    //             // Construct SQL dump command
-    //             val command = when (connection.type) {
-    //                 DatasourceType.MYSQL -> {
-    //                     println("Constructing mysqldump command for MySQL database")
-    //                     arrayOf(
-    //                         "mysqldump",
-    //                         "-u${connection.username}",
-    //                         "-p${connection.password}",
-    //                         "-h${connection.hostname}",
-    //                         "-P${connection.port}",
-    //                         "--databases",
-    //                         connection.databaseName,
-    //                         "--result-file=${tempFile.absolutePath}"
-    //                     )
-    //                 }
-    //                 DatasourceType.POSTGRESQL -> {
-    //                     println("Constructing pg_dump command for PostgreSQL database")
-    //                     arrayOf(
-    //                         "pg_dump",
-    //                         "-U${connection.username}",
-    //                         "-h${connection.hostname}",
-    //                         "-p${connection.port}",
-    //                         "-d${connection.databaseName}",
-    //                         "--file=${tempFile.absolutePath}",
-    //                     )
-    //                 }
-    //                 else -> {
-    //                     println("Unsupported database type: ${connection.type}")
-    //                     throw IllegalArgumentException("Unsupported database type: ${connection.type}")
-    //                 }
-    //             }
-
-
-    //             // Execute mysqldump command
-    //             val process = Runtime.getRuntime().exec(command)
-    //             val exitCode = process.waitFor() 
-    //             // val exitCode = process.waitFor(60L, TimeUnit.SECONDS) #rename to success
-
-    //             // Check if mysqldump executed successfully
-    //             if (exitCode == 0) {
-    //                 // If successful, prepare response entity with the SQL dump as input stream
-    //                 val resource = InputStreamResource(tempFile.inputStream())
-    //                 val fileName = "${connectionId}.sql"
-    //                 return SQLDumpResponse(resource, fileName)
-    //             } else {
-    //                 val errorStream = process.errorStream.bufferedReader().use { it.readText() }
-    //                 throw Exception("SQL dump command failed: $errorStream")
-    //             }
-    //         } else {
-    //             throw Exception("Invalid connection type for connectionId: $connectionId")
-    //         }
-    //     } catch (e: Exception) {
-    //         throw Exception("Other unexpected error occurred: ${e.message}")
-    //     }
-    // }
 
     @Transactional
     @Policy(Permission.EXECUTION_REQUEST_GET)
