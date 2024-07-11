@@ -36,6 +36,7 @@ brew services start postgresql@16
 
 # frontend
 cd frontend/
+npm install
 npm run start
 
 # backend
