@@ -54,8 +54,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
     implementation("org.springframework.boot:spring-boot-devtools")
-
-
     implementation("org.springframework.security:spring-security-acl")
     implementation("org.springframework.security:spring-security-config")
     implementation("org.springframework:spring-context-support")
