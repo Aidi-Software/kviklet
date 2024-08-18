@@ -94,7 +94,7 @@ const CSVDownloadSchema = z.object({
 
 const RawDatasourceRequestSchema = z.object({
   id: z.string(),
-  type: z.enum(["TemporaryAccess", "SingleExecution"]),
+  type: z.enum(["TemporaryAccess", "SingleExecution", "SQLDump"]),
   author: userResponseSchema,
   title: z.string().min(1),
   description: z.string(),
@@ -300,7 +300,7 @@ const addReviewToRequest = async (
   id: string,
   review: string,
   action: string,
-): Promise<ApiResponse<void>> => {
+): Promise<ApiResponse<Review>> => {
   return fetchWithErrorHandling(
     requestUrl + id + "/reviews",
     {
@@ -311,8 +311,36 @@ const addReviewToRequest = async (
       credentials: "include",
       body: JSON.stringify({ comment: review, action }),
     },
-    z.undefined(),
+    ReviewEvent,
   );
+};
+
+const SQLDumpRequest = async (connectionId: string): Promise<Uint8Array[]> => {
+  // Request SQL dump data from the backend which returns an array of encoded strings in chunks
+  const response = await fetch(`${requestUrl}stream-sql-dump/${connectionId}`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch SQL dump: ${response.status} ${response.statusText}`,
+    );
+  }
+  const base64Chunks = (await response.json()) as string[];
+
+  // Convert Base64 encoded strings to Uint8Array
+  const decodedChunks = base64Chunks.map((chunk: string) => {
+    // Decode Base64 to binary string
+    const binaryString = atob(chunk);
+    const binaryLen = binaryString.length;
+    const bytes = new Uint8Array(binaryLen);
+    for (let i = 0; i < binaryLen; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  });
+  return decodedChunks;
 };
 
 function withType<T, U extends string>(schema: z.ZodSchema<T>, typeValue: U) {
@@ -459,6 +487,7 @@ export {
   patchRequest,
   postStartServer,
   executeCommand,
+  SQLDumpRequest,
 };
 export type {
   DBExecuteResponseResult as ExecuteResponseResult,

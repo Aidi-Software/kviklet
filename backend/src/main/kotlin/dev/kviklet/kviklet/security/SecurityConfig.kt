@@ -1,5 +1,6 @@
 package dev.kviklet.kviklet.security
 
+import OriginHeaderFilter
 import dev.kviklet.kviklet.controller.ServerUrlInterceptor
 import dev.kviklet.kviklet.db.RoleAdapter
 import dev.kviklet.kviklet.db.User
@@ -11,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpStatus
@@ -53,6 +55,7 @@ import org.springframework.stereotype.Service
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.springframework.web.filter.CorsFilter
 import org.springframework.web.filter.ForwardedHeaderFilter
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry
@@ -65,6 +68,12 @@ class PasswordEncoderConfig {
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 }
 
+@ConfigurationProperties(prefix = "cors")
+@Configuration
+class CorsSettings {
+    var allowedOrigins: List<String> = emptyList()
+}
+
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(
@@ -75,6 +84,7 @@ class SecurityConfig(
     private val ldapProperties: LdapProperties,
     private val contextSource: LdapContextSource,
     private val userDetailsService: UserDetailsServiceImpl,
+    private val corsSettings: CorsSettings,
 ) {
 
     @Bean
@@ -118,6 +128,7 @@ class SecurityConfig(
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http.invoke {
             addFilterBefore<WebAsyncManagerIntegrationFilter>(ForwardedHeaderFilter())
+            addFilterBefore<CorsFilter>(OriginHeaderFilter())
             cors { }
             authenticationManager = authManager(http)
 
@@ -184,12 +195,7 @@ class SecurityConfig(
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val configuration = CorsConfiguration()
-        configuration.allowedOrigins = listOf(
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:80",
-            "http://localhost",
-        )
+        configuration.allowedOrigins = corsSettings.allowedOrigins
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
         configuration.allowCredentials = true
         configuration.allowedHeaders = listOf("*")
